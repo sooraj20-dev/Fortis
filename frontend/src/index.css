@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-dark-bg text-text-primary font-sans antialiased;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-dark-surface; }
+  ::-webkit-scrollbar-thumb { @apply bg-dark-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { background: #f97316; }
+}
+
+@layer components {
+  /* ─── Cards ─────────────────────────────────────── */
+  .fortis-card {
+    @apply bg-dark-card border border-dark-border rounded-2xl shadow-card transition-all duration-200;
+  }
+  .fortis-card:hover { @apply shadow-card-hover border-brand/20; }
+
+  /* ─── Buttons ────────────────────────────────────── */
+  .fortis-btn-primary {
+    @apply bg-brand hover:bg-brand-dark text-white font-bold px-5 py-2.5 rounded-xl
+           transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
+           shadow-glow;
+  }
+
+  .fortis-btn-secondary {
+    @apply bg-dark-hover hover:bg-dark-border text-text-primary font-semibold px-5 py-2.5 rounded-xl
+           border border-dark-border transition-all duration-150 active:scale-95;
+  }
+
+  .fortis-btn-ghost {
+    @apply hover:bg-dark-hover text-text-secondary hover:text-text-primary font-medium px-4 py-2 rounded-xl transition-all duration-150;
+  }
+
+  /* Orange pill / tag */
+  .fortis-pill {
+    @apply bg-brand/15 text-brand-light border border-brand/25 text-xs font-bold px-3 py-1 rounded-full;
+  }
+
+  /* ─── Inputs ─────────────────────────────────────── */
+  .fortis-input {
+    @apply bg-dark-surface border border-dark-border rounded-xl px-4 py-2.5 text-text-primary
+           placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand
+           transition-colors w-full;
+  }
+
+  .fortis-label {
+    @apply text-text-secondary text-sm font-medium mb-1.5 block;
+  }
+
+  /* ─── Decision badges ────────────────────────────── */
+  .decision-badge-progressive { @apply bg-success/15 text-success border border-success/20 text-xs font-semibold px-2.5 py-1 rounded-full; }
+  .decision-badge-normal      { @apply bg-brand/15 text-brand-light border border-brand/20 text-xs font-semibold px-2.5 py-1 rounded-full; }
+  .decision-badge-reduced     { @apply bg-warning/15 text-warning border border-warning/20 text-xs font-semibold px-2.5 py-1 rounded-full; }
+  .decision-badge-recovery    { @apply bg-orange-500/15 text-orange-400 border border-orange-500/20 text-xs font-semibold px-2.5 py-1 rounded-full; }
+  .decision-badge-rest        { @apply bg-danger/15 text-danger border border-danger/20 text-xs font-semibold px-2.5 py-1 rounded-full; }
+
+  /* ─── Scan metric number ─────────────────────────── */
+  .scan-number {
+    @apply text-6xl font-black leading-none tracking-tighter text-white;
+  }
+
+  .scan-number-xl {
+    font-size: clamp(3.5rem, 10vw, 7rem);
+    @apply font-black leading-none tracking-tighter text-white;
+  }
+
+  /* ─── Overline label ─────────────────────────────── */
+  .overline {
+    @apply text-[10px] font-bold uppercase tracking-[0.15em] text-text-muted;
+  }
+
+  .overline-brand {
+    @apply text-[10px] font-bold uppercase tracking-[0.15em] text-brand-light;
+  }
+
+  /* ─── Orange divider line ────────────────────────── */
+  .brand-line {
+    @apply w-8 h-[3px] bg-brand rounded-full;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-brand-light to-orange-300 bg-clip-text text-transparent;
+  }
+  .text-gradient-white {
+    @apply bg-gradient-to-b from-white to-white/50 bg-clip-text text-transparent;
+  }
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .bg-radial-orange {
+    background: radial-gradient(ellipse at top right, rgba(249,115,22,0.12) 0%, transparent 65%);
+  }
+  .bg-radial-dark {
+    background: radial-gradient(ellipse at bottom left, rgba(249,115,22,0.06) 0%, transparent 60%);
+  }
+}

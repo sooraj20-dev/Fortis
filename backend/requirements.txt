@@ -1,0 +1,39 @@
+# Core API
+fastapi>=0.128.0
+uvicorn[standard]==0.30.0
+
+# Database (MongoDB Atlas)
+pymongo>=4.18.0
+motor>=3.7.0
+dnspython>=2.8.0
+certifi>=2024.7.4
+sqlalchemy==2.0.35
+
+# Validation & Settings
+pydantic>=2.12.0
+pydantic-settings>=2.7.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# File uploads
+python-multipart==0.0.9
+
+# AI / ML
+numpy==2.4.6
+pandas==2.3.3
+scikit-learn==1.9.1
+openai==1.51.0
+
+# Computer Vision
+mediapipe-nightly==0.10.36rc20260622
+opencv-python-headless==4.10.0.84
+Pillow>=10.4.0
+
+# HTTP client
+httpx==0.27.2
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
