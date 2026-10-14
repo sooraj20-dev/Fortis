@@ -2,6 +2,8 @@
 scan.py — Fortis Scan API router.
 Flagship movement analysis, blueprint synthesis, scan history, evolution comparisons, and BMI screening.
 """
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
@@ -10,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from app.database import get_db
+from app.config import settings
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.scan import BodyScan, ScanMetric, ScanObservation, ScanComparison
@@ -119,16 +122,22 @@ async def analyze_scan(
     """
     upload_file = file or video
     if upload_file:
-        content = await upload_file.read()
+        max_upload_size = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        content = await upload_file.read(max_upload_size + 1)
         if len(content) == 0:
             raise HTTPException(status_code=400, detail="Uploaded video file is empty.")
+        if len(content) > max_upload_size:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Video too large (max {settings.MAX_UPLOAD_SIZE_MB}MB).",
+            )
 
         res = scan_service.process_video_bytes(
             video_bytes=content,
             filename=upload_file.filename or "scan.mp4",
             user_id=current_user.id,
             db=db,
-            discard_video=discard_video,
+            discard_video=discard_video or bool(os.getenv("VERCEL")),
             allow_demo_fallback=allow_demo_fallback,
         )
 

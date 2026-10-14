@@ -22,8 +22,6 @@ python-multipart==0.0.9
 
 # AI / ML
 numpy==2.4.6
-pandas==2.3.3
-scikit-learn==1.9.1
 openai==1.51.0
 
 # Computer Vision

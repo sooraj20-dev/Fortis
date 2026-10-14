@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, List
 from app.models.user import User
 from app.models.scan import BodyScan, ScanMetric, ScanObservation, ScanComparison
 from app.models.intelligence import FitnessState, FortisDecision
+from app.config import settings
 from app.vision.body_scan import BodyScanExtractor
 from app.vision.posture_analysis import PostureAnalyzer
 from app.vision.mobility_analysis import MobilityAnalyzer
@@ -94,7 +95,7 @@ class ScanService:
         Ingest video bytes temporarily, run the vision pipeline, update fitness state,
         recompute Fortis Pulse, generate adapted decisions, and discard raw video.
         """
-        temp_dir = os.path.join("uploads", "temp_scans")
+        temp_dir = os.path.join(settings.UPLOAD_DIR, "temp_scans")
         os.makedirs(temp_dir, exist_ok=True)
         ext = os.path.splitext(filename)[1] or ".mp4"
         temp_path = os.path.join(temp_dir, f"scan_{uuid.uuid4().hex}{ext}")

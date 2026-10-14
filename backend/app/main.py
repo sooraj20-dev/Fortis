@@ -95,9 +95,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files (uploaded videos/images)
-os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Uploads are temporary on Vercel; durable app data belongs in MongoDB or object storage.
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 # Include all routers
 from app.routers import auth, profile, dashboard, workouts, nutrition, recovery, fitness_state, coach, progress, vision, scan  # noqa

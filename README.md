@@ -7,6 +7,20 @@
 
 ## 🚀 Quick Start
 
+### Deploy frontend and API to Vercel
+
+The root [`vercel.json`](./vercel.json) builds the Vite frontend and the FastAPI backend as a Python 3.12 serverless function. The frontend uses same-origin `/api` requests in production, so no public backend URL or CORS configuration is needed.
+
+1. Push the project to GitHub and import the repository in Vercel. Keep the project root directory set to the repository root.
+2. In the Vercel project settings, add these environment variables for **Production**, **Preview**, and **Development** as needed:
+   - `MONGODB_URL`: a MongoDB connection string for a database reachable from Vercel.
+   - `MONGODB_DB_NAME`: the database name (for example, `fortis`).
+   - `JWT_SECRET`: a unique, randomly generated secret of at least 32 characters.
+   - `AI_API_KEY` and/or `GEMINI_API_KEY`: optional keys for the AI features that use them.
+3. Deploy. The app is served at `/`; the API and interactive API docs are available at `/api/...` and `/docs`.
+
+Vercel functions are stateless: application records are stored in MongoDB, while temporary scan and exercise uploads use `/tmp` and are not retained between requests. The API caps uploads at 4 MB on Vercel to stay below the platform's request-body limit. Video analysis can also exceed the function-duration limit for larger or longer clips; use a dedicated backend host and object storage if those workloads are required.
+
 ### First-time setup
 
 Requirements: Python 3.11 or newer, Node.js 18 or newer, and a reachable MongoDB database.

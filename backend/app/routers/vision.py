@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/vision", tags=["vision"])
 
-UPLOAD_DIR = "uploads"
+UPLOAD_DIR = settings.UPLOAD_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 SUPPORTED_EXERCISES = ["squat", "push-up", "pushup", "push up", "bicep curl", "curl", "lunge", "plank", "shoulder press"]
@@ -201,16 +201,22 @@ async def analyze_exercise_form(
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type}")
 
-    # Save file
+    # Save the upload only while it is being analyzed.
     ext = os.path.splitext(file.filename)[1] if file.filename else ".mp4"
     filename = f"{uuid.uuid4()}{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
-    content = await file.read()
+    content = await file.read(settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024 + 1)
+    if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large")
     with open(filepath, "wb") as f:
         f.write(content)
 
     # Analyze form based on real video kinematics
-    analysis = _analyze_exercise_video(filepath, exercise_name)
+    try:
+        analysis = _analyze_exercise_video(filepath, exercise_name)
+    finally:
+        if os.getenv("VERCEL") and os.path.exists(filepath):
+            os.remove(filepath)
 
     # Find exercise in DB
     exercise = db.query(Exercise).filter(
@@ -221,7 +227,7 @@ async def analyze_exercise_form(
     result = ExerciseFormResult(
         user_id=current_user.id,
         exercise_id=exercise.id if exercise else None,
-        video_path=filepath,
+        video_path="" if os.getenv("VERCEL") else filepath,
         form_score=analysis["form_score"],
         breakdown=analysis["breakdown"],
         feedback=analysis["feedback"],
@@ -254,15 +260,9 @@ async def analyze_food_image(
         raise HTTPException(status_code=415, detail="Please upload a JPEG, PNG, or WebP image")
 
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Image too large (max 10MB)")
-
-    # Save file for audit trail
-    ext = os.path.splitext(file.filename)[1] if file.filename else ".jpg"
-    filename = f"food_{uuid.uuid4()}{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    with open(filepath, "wb") as f:
-        f.write(content)
+    max_image_size = min(settings.MAX_UPLOAD_SIZE_MB, 10) * 1024 * 1024
+    if len(content) > max_image_size:
+        raise HTTPException(status_code=413, detail=f"Image too large (max {max_image_size // (1024 * 1024)}MB)")
 
     # ── Gemini Vision Analysis ────────────────────────────────────────────
     try:
