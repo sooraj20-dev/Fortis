@@ -96,16 +96,17 @@ Remember: rest and recovery are when your body actually adapts and gets stronger
 
 These are estimates based on typical serving sizes. Adjust portions to your hunger levels.""",
 
-    "general": """I'm Fortis, your AI fitness coach. I have access to your complete fitness data including your workouts, nutrition logs, recovery metrics, and personal baselines.
+    "greeting": """Hello! I'm Fortis, your AI fitness coach. I'm actively tracking your workout data, recovery signals, and nutritional targets.
 
-Your current Fortis Pulse is **{pulse:.0f}** — {pulse_label}.
+Your current Fortis Pulse is **{pulse:.0f}** ({pulse_label}). What would you like to focus on today? We can discuss workout adjustments, recovery status, or meal suggestions.""",
 
-How can I help you today? I can:
-- Explain any training decision I've made
-- Adjust today's workout
-- Suggest meals within your budget
-- Analyze your recovery trend
-- Run a what-if simulation""",
+    "general": """I understand you're asking about your training. Based on your current Fortis telemetry:
+
+- Fortis Pulse: **{pulse:.0f}** ({pulse_label})
+- Today's Decision: **{decision_type}**
+- Primary Goal: **{goal}**
+
+Feel free to ask specific questions about today's workout adaptations, your recovery trends, or regional meal ideas within your ₹{budget} budget.""",
 }
 
 
@@ -138,12 +139,14 @@ def _detect_intent(user_message: str) -> str:
         return "workout_change"
     elif any(w in msg for w in ["minutes", "time", "short", "quick", "20", "30", "15"]):
         return "workout_time"
-    elif any(w in msg for w in ["equipment", "dumbbell", "gym", "substitute", "without"]):
+    elif any(w in msg for w in ["equipment", "dumbbell", "gym", "substitute", "without", "pushup", "squat", "bench"]):
         return "equipment"
-    elif any(w in msg for w in ["recovery", "rest", "tired", "sore", "sleep"]):
+    elif any(w in msg for w in ["recovery", "rest", "tired", "sore", "sleep", "energy", "stress"]):
         return "recovery"
-    elif any(w in msg for w in ["eat", "food", "meal", "diet", "nutrition", "budget"]):
+    elif any(w in msg for w in ["eat", "food", "meal", "diet", "nutrition", "budget", "protein", "calories"]):
         return "nutrition"
+    elif any(w in msg for w in ["hi", "hello", "hey", "greetings"]):
+        return "greeting"
     else:
         return "general"
 
@@ -266,6 +269,7 @@ class MockAIProvider(AIProvider):
                 time=time_val,
                 recommendation=recovery_rec,
                 goal=goal.replace("_", " ").title(),
+                decision_type=decision_type,
                 budget=budget,
                 cost=round(budget * 0.92),
                 substitutions="\n".join(subs_list),

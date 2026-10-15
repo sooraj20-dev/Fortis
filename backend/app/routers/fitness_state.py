@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from datetime import datetime, timedelta
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.intelligence import FitnessState, FortisDecision
 from app.intelligence.fitness_state import FitnessStateCalculator
@@ -13,7 +13,7 @@ from app.intelligence.baseline import BaselineTracker
 from app.intelligence.explainability import build_explanation
 from app.schemas.intelligence import FitnessStateResponse, FortisDecisionResponse
 
-router = APIRouter(prefix="/api/fitness-state", tags=["fitness-state"])
+router = APIRouter(prefix="/api/fitness-state", tags=["fitness-state"], dependencies=[Depends(require_onboarded_user)])
 fs_calc = FitnessStateCalculator()
 de = FortisDecisionEngine()
 bt = BaselineTracker()

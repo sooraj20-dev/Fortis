@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import BrandLogo from '../components/BrandLogo';
 import UserAvatar from '../components/UserAvatar';
+import api from '../services/api';
 
 const navItems = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -30,6 +31,17 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const check = () => api.get('/health')
+      .then((res) => { if (mounted) setApiOnline(res.data?.status === 'ok'); })
+      .catch(() => { if (mounted) setApiOnline(false); });
+    check();
+    const timer = window.setInterval(check, 30_000);
+    return () => { mounted = false; window.clearInterval(timer); };
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -90,9 +102,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       <main className="flex-1 md:ml-60 flex flex-col min-h-screen pb-20 md:pb-6">
         <header className="h-14 border-b border-dark-border px-6 flex items-center justify-between bg-dark-bg/80 backdrop-blur sticky top-0 z-10">
           <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-            <span className="text-xs font-semibold text-text-secondary tracking-wide">
-              System Online · Decision Loop Active
+            <span className={`h-1.5 w-1.5 rounded-full ${apiOnline === true ? 'bg-success' : apiOnline === false ? 'bg-danger' : 'bg-warning'}`} />
+            <span className="text-xs font-semibold text-text-secondary tracking-wide" aria-live="polite">
+              {apiOnline === true ? 'Fortis API Online' : apiOnline === false ? 'Fortis API Offline' : 'Checking Fortis API…'}
             </span>
           </div>
           <div className="flex items-center gap-3">

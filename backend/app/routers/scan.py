@@ -13,7 +13,7 @@ from typing import Optional, List, Dict, Any
 
 from app.database import get_db
 from app.config import settings
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.scan import BodyScan, ScanMetric, ScanObservation, ScanComparison
 from app.models.intelligence import FitnessState, FortisDecision
@@ -23,7 +23,7 @@ from app.intelligence.decision_engine import FortisDecisionEngine
 from app.nutrition.regional_foods import get_foods_for_meal
 from app.nutrition.budget_optimizer import MEAL_TEMPLATES
 
-router = APIRouter(prefix="/api/scan", tags=["scan"])
+router = APIRouter(prefix="/api/scan", tags=["scan"], dependencies=[Depends(require_onboarded_user)])
 scan_service = ScanService()
 decision_engine = FortisDecisionEngine()
 

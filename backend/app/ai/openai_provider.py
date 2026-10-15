@@ -1,5 +1,5 @@
 """OpenAI Provider — uses GPT-4o-mini for live AI Coach responses."""
-from app.ai.provider import AIProvider, AIResponse
+from app.ai.provider import AIProvider, AIResponse, AIProviderError
 from app.config import settings
 from typing import List, Dict, Optional
 import logging
@@ -38,7 +38,5 @@ class OpenAIProvider(AIProvider):
                 tool_calls=msg.tool_calls or []
             )
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
-            # Fallback to mock
-            from app.ai.mock_provider import MockAIProvider
-            return await MockAIProvider().complete(messages, tools, max_tokens)
+            logger.exception("OpenAI API request failed")
+            raise AIProviderError("OpenAI request failed. Check the configured API key, model access, and network.") from e

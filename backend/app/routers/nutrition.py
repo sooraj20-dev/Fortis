@@ -5,14 +5,14 @@ from sqlalchemy import func, desc
 from datetime import datetime, date
 from typing import Optional, List
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.nutrition import FoodItem, FoodLog, MealPlan, GroceryList
 from app.models.profile import Goal, NutritionPreference
 from app.schemas.nutrition import FoodLogCreate, FoodLogResponse, NutritionSummary, MealPlanRequest, MealPlanResponse
 from app.nutrition.budget_optimizer import generate_meal_plan
 
-router = APIRouter(prefix="/api", tags=["nutrition"])
+router = APIRouter(prefix="/api", tags=["nutrition"], dependencies=[Depends(require_onboarded_user)])
 
 
 @router.get("/nutrition/today")
@@ -62,6 +62,10 @@ def get_today_nutrition(current_user: User = Depends(get_current_user), db: Sess
         "calories_pct": round(min(100, total_cal / target_cal * 100), 1),
         "protein_pct": round(min(100, total_protein / max(target_protein, 1) * 100), 1),
         "budget_inr": nutr_pref.daily_budget_inr if nutr_pref else 150.0,
+        "regional_preference": nutr_pref.regional_preference if nutr_pref else "Kerala",
+        "diet_type": nutr_pref.diet_type if nutr_pref else "non_vegetarian",
+        "goal": goal.primary_goal if goal else "GENERAL_FITNESS",
+        "allergies": nutr_pref.allergies if nutr_pref else [],
         "logs": log_data,
         # Adherence: penalize both under- and over-eating relative to target
         # Calories contribute 60% weight; protein contributes 40% weight.
@@ -153,11 +157,11 @@ def generate_diet(data: MealPlanRequest, current_user: User = Depends(get_curren
 
     result = generate_meal_plan(
         db=db,
-        goal=goal.primary_goal if goal else data.goal,
-        daily_budget_inr=data.daily_budget_inr or (nutr_pref.daily_budget_inr if nutr_pref else 150),
-        regional_preference=data.regional_preference,
-        diet_type=data.diet_type,
-        allergies=data.allergies,
+        goal=(goal.primary_goal if goal else None) or data.goal or "GENERAL_FITNESS",
+        daily_budget_inr=data.daily_budget_inr if data.daily_budget_inr is not None else (nutr_pref.daily_budget_inr if nutr_pref else 150),
+        regional_preference=data.regional_preference or (nutr_pref.regional_preference if nutr_pref else "Kerala"),
+        diet_type=data.diet_type or (nutr_pref.diet_type if nutr_pref else "non_vegetarian"),
+        allergies=data.allergies if data.allergies is not None else (nutr_pref.allergies if nutr_pref else []),
         available_ingredients=data.available_ingredients,
     )
     result["date"] = datetime.utcnow().date().isoformat()

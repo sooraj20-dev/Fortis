@@ -4,26 +4,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
-from app.models.recovery import SleepLog, RecoveryLog
+from app.models.recovery import SleepLog, RecoveryLog, compute_recovery_score
 from app.schemas.recovery import SleepLogCreate, RecoveryLogCreate
 
-router = APIRouter(prefix="/api/recovery", tags=["recovery"])
+router = APIRouter(prefix="/api/recovery", tags=["recovery"], dependencies=[Depends(require_onboarded_user)])
 
 
 def _compute_recovery_score(energy: int, soreness: int, stress: int, mood: int) -> float:
-    """
-    Compute recovery score from raw signals.
-    All inputs are 1-10. Higher energy/mood = better. Higher soreness/stress = worse.
-    """
-    score = (
-        energy * 12 +
-        (10 - soreness) * 10 +
-        (10 - stress) * 8 +
-        mood * 10
-    ) / 4
-    return round(min(100, max(0, score)), 1)
+    return compute_recovery_score(energy, soreness, stress, mood)
 
 
 @router.get("/today")

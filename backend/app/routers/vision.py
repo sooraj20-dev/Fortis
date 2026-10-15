@@ -1,27 +1,38 @@
-"""Vision router — exercise form analysis and food classification via Gemini Vision"""
+"""Vision router — exercise form and food-image analysis with Gemini Flash."""
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
 import uuid
-import base64
 import json
-import re
 import logging
+import math
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.workout import Exercise, ExerciseFormResult
 from app.config import settings
+from app.ai.provider import AIProviderError
+from app.ai.vision import analyze_images_json
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/vision", tags=["vision"])
+router = APIRouter(prefix="/api/vision", tags=["vision"], dependencies=[Depends(require_onboarded_user)])
 
 UPLOAD_DIR = settings.UPLOAD_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 SUPPORTED_EXERCISES = ["squat", "push-up", "pushup", "push up", "bicep curl", "curl", "lunge", "plank", "shoulder press"]
+
+
+def _bounded_number(value, default: float, minimum: float, maximum: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    if not math.isfinite(number):
+        number = default
+    return max(minimum, min(maximum, number))
 
 
 def _analyze_exercise_video(filepath: str, exercise_type: str) -> dict:
@@ -30,7 +41,6 @@ def _analyze_exercise_video(filepath: str, exercise_type: str) -> dict:
     import numpy as np
     from app.vision.scan_service import scan_service
 
-    ex_lower = exercise_type.lower()
     time_series = []
 
     # Attempt landmark extraction via MediaPipe extractor
@@ -43,7 +53,6 @@ def _analyze_exercise_video(filepath: str, exercise_type: str) -> dict:
 
     # Fallback to OpenCV frame kinematics if time series is empty
     cap = cv2.VideoCapture(filepath)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.isOpened() else 0
     cap.release()
 
     valid_frames = [f for f in time_series if f.get("has_pose") and f.get("angles")]
@@ -57,133 +66,109 @@ def _analyze_exercise_video(filepath: str, exercise_type: str) -> dict:
         avg_torso = float(np.mean(torso_leans))
         torso_var = float(np.std(torso_leans))
 
-        # Depth score based on actual lowest inflection (parallel is ~90 deg)
-        depth_score = max(50.0, min(98.0, 100.0 - abs(min_knee - 85.0) * 0.8))
-        stability_score = max(50.0, min(95.0, 95.0 - torso_var * 2.5))
-        control_score = max(50.0, min(95.0, 70.0 + (rom / 2.5)))
-        alignment_score = max(55.0, min(96.0, 95.0 - avg_torso * 1.2))
-
-        form_score = round(0.35 * depth_score + 0.25 * alignment_score + 0.20 * stability_score + 0.20 * control_score, 1)
-
-        feedback = []
-        if min_knee < 100:
-            feedback.append("✓ Strong functional movement depth achieved at bottom inflection")
-        else:
-            feedback.append("⚠ Movement depth was limited — aim to descend closer to parallel")
-
-        if torso_var < 8.0:
-            feedback.append("✓ Excellent trunk stability and spine angle maintenance")
-        else:
-            feedback.append("⚠ Excessive torso sway detected during inflection phase")
-
-        if rom > 60:
-            feedback.append("✓ Full kinematic range of motion utilized")
-        else:
-            feedback.append("⚠ Incomplete range of motion observed across repetitions")
-
         return {
-            "form_score": form_score,
-            "breakdown": {
-                "depth": round(depth_score, 1),
-                "knee_alignment": round(alignment_score, 1),
-                "torso_stability": round(stability_score, 1),
-                "movement_control": round(control_score, 1),
+            "form_score": None,
+            "landmark_frames": len(valid_frames),
+            "kinematic_measurements": {
+                "minimum_knee_flexion_degrees": round(float(min_knee), 1),
+                "maximum_knee_flexion_degrees": round(float(max_knee), 1),
+                "knee_range_degrees": round(float(rom), 1),
+                "mean_torso_inclination_degrees": round(avg_torso, 1),
+                "torso_inclination_variation_degrees": round(torso_var, 1),
             },
-            "feedback": feedback,
-            "primary_improvement": "Maintain upright torso and knee tracking over toes",
+            "breakdown": {},
+            "feedback": [],
+            "primary_improvement": "",
         }
 
-    # If pose extractor did not detect sufficient human landmarks in the frames
-    score_base = max(60.0, min(85.0, 65.0 + min(total_frames, 100) * 0.15))
+    # Do not derive a form score from video length when no pose landmarks were found.
     return {
-        "form_score": round(score_base, 1),
-        "breakdown": {
-            "depth": round(score_base - 3.0, 1),
-            "knee_alignment": round(score_base, 1),
-            "torso_stability": round(score_base + 2.0, 1),
-            "movement_control": round(score_base - 1.0, 1),
-        },
-        "feedback": [
-            f"✓ Video processed successfully ({total_frames} frames analyzed)",
-            "⚠ Ensure full body is visible in good lighting for maximum landmark confidence",
-            "✓ Controlled repetition pacing detected across frames",
-        ],
-        "primary_improvement": "Position camera at waist height to capture full joint range",
+        "form_score": None,
+        "breakdown": {},
+        "feedback": [],
+        "primary_improvement": "",
+        "landmark_frames": 0,
     }
 
 
-def _analyze_food_with_gemini(image_bytes: bytes, mime_type: str) -> dict:
-    """
-    Use Google Gemini multimodal vision to identify food and estimate nutrition.
-    Returns a dict with keys: food_name, region, confidence, calories, protein_g,
-    carbs_g, fat_g, serving_g, alternatives, brief_note, is_healthy.
-    Raises RuntimeError if Gemini is not configured or the package is missing.
-    """
-    # Try GEMINI_API_KEY first, fall back to AI_API_KEY
-    gemini_key = getattr(settings, "GEMINI_API_KEY", "") or getattr(settings, "AI_API_KEY", "")
-    gemini_model = getattr(settings, "GEMINI_MODEL", "") or "gemini-1.5-flash"
+async def _analyze_exercise_with_gemini(filepath: str, exercise_type: str, kinematics: dict) -> dict:
+    """Assess sampled video frames with Gemini Flash and pose measurements when available."""
+    import cv2
 
-    if not gemini_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY not configured. Add GEMINI_API_KEY=<your-key> to backend/.env"
-        )
+    cap = cv2.VideoCapture(filepath)
+    if not cap.isOpened():
+        raise ValueError("Unable to read the uploaded video")
+    total_frames = max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+    sample_count = min(5, total_frames)
+    indices = sorted({round(i * (total_frames - 1) / max(1, sample_count - 1)) for i in range(sample_count)})
+    images = []
+    for index in indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        height, width = frame.shape[:2]
+        scale = min(1.0, 1024 / max(height, width))
+        if scale < 1:
+            frame = cv2.resize(frame, (int(width * scale), int(height * scale)))
+        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+        if ok:
+            images.append((encoded.tobytes(), "image/jpeg"))
+    cap.release()
+    if not images:
+        raise ValueError("No readable frames were found in the uploaded video")
 
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        raise RuntimeError(
-            "google-generativeai package not installed. "
-            "Run: backend/venv/Scripts/pip install google-generativeai"
-        )
+    prompt = f"""Assess this {exercise_type} exercise form from {len(images)} ordered frames sampled from one video.
+Use visible evidence only. Acknowledge that a few sampled frames cannot verify every repetition or diagnose injury.
+Pose-estimation measurements from the same video, if present: {json.dumps(kinematics, default=str)}
+Treat these as approximate measurements, not precomputed scores. If landmark_frames is zero, assess only what is visible.
+Return JSON only with keys: form_score (0-100 number or null if not assessable), confidence (0-1),
+breakdown (depth, knee_alignment, torso_stability, movement_control each 0-100 or null),
+feedback (3 concise evidence-based observations), primary_improvement (one actionable cue),
+visual_evidence (brief description of what is actually visible).
+Do not claim angles, repetition counts, pain, or movement defects that are not visible. If the body or exercise is unclear,
+set form_score to null, confidence below 0.4, and explain what needs to be reframed."""
+    return await analyze_images_json(prompt, images, max_tokens=1200)
 
-    genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel(gemini_model)
 
-    prompt = """You are a professional nutritionist and food recognition expert specializing in South Indian and Kerala cuisine.
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
-Analyze this food image carefully and respond ONLY with a valid JSON object — no markdown, no explanation, no code fences, just raw JSON.
 
-Required JSON format:
-{
-  "food_name": "<specific dish name, e.g. 'Puttu with Kadala Curry' or 'Chicken Biryani'>",
-  "region": "<cuisine region, e.g. 'Kerala', 'South India', 'North India', 'General Indian', 'Western'>",
-  "confidence": <float 0.0-1.0>,
-  "serving_description": "<e.g. '1 plate (~200g)' or '1 cup (~150g)'>",
-  "serving_g": <estimated grams as integer>,
-  "calories": <total kcal for this serving as float>,
-  "protein_g": <protein grams for this serving as float>,
-  "carbs_g": <carbohydrate grams for this serving as float>,
-  "fat_g": <fat grams for this serving as float>,
-  "fiber_g": <dietary fiber grams as float>,
-  "sugar_g": <sugar grams as float>,
-  "alternatives": [
-    {"name": "<second likely food>", "confidence": <float>},
-    {"name": "<third likely food>", "confidence": <float>}
-  ],
-  "is_healthy": <true or false>,
-  "brief_note": "<one sentence about this dish, its origin or nutritional benefit>"
-}
+class FoodAlternative(BaseModel):
+    name: str
+    confidence: float = Field(ge=0.0, le=1.0)
 
-Rules:
-- If you cannot identify the food clearly, set confidence below 0.5 and food_name to "Unidentified Food Item".
-- Be as specific as possible with Indian dish names (e.g. "Malabar Biryani" not just "Biryani", "Puttu" not just "steamed cake").
-- Nutritional values should be for the ENTIRE visible serving in the image, not per 100g.
-- Do not include any text outside the JSON object."""
 
-    image_part = {
-        "mime_type": mime_type,
-        "data": base64.b64encode(image_bytes).decode("utf-8"),
-    }
+class FoodAnalysisSchema(BaseModel):
+    food_name: str
+    region: str = "General"
+    confidence: float = Field(ge=0.0, le=1.0)
+    serving_description: str
+    serving_g: int = Field(ge=1, le=5000)
+    calories: float = Field(ge=0.0)
+    protein_g: float = Field(ge=0.0)
+    carbs_g: float = Field(ge=0.0)
+    fat_g: float = Field(ge=0.0)
+    fiber_g: float = Field(ge=0.0)
+    sugar_g: float = Field(ge=0.0)
+    alternatives: List[FoodAlternative] = Field(default_factory=list)
+    is_healthy: Optional[bool] = None
+    brief_note: str = ""
 
-    response = model.generate_content([prompt, image_part])
-    raw_text = response.text.strip()
 
-    # Strip markdown code fences if Gemini still wrapped with ```json ... ```
-    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.MULTILINE)
-    raw_text = re.sub(r"\s*```\s*$", "", raw_text, flags=re.MULTILINE)
-
-    parsed = json.loads(raw_text.strip())
-    return parsed
+async def _analyze_food_with_gemini(image_bytes: bytes, mime_type: str) -> dict:
+    prompt = """Identify the visible food and estimate nutrition for the entire visible serving. Specialize in Indian and Kerala cuisine.
+Return a validated JSON object with: food_name, region, confidence (0-1), serving_description, serving_g (integer),
+calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, alternatives (array of name/confidence), is_healthy (boolean), brief_note.
+Estimate portions conservatively from visible size; these are estimates, not laboratory measurements. If food is unclear,
+use food_name 'Unidentified Food Item' and confidence below 0.5. Do not invent ingredients that cannot be seen."""
+    return await analyze_images_json(
+        prompt,
+        [(image_bytes, mime_type)],
+        response_schema=FoodAnalysisSchema,
+        max_tokens=1500,
+    )
 
 
 @router.post("/exercise")
@@ -193,11 +178,13 @@ async def analyze_exercise_form(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Validate file
+    # Validate exercise and file
+    if exercise_name.strip().lower() not in SUPPORTED_EXERCISES:
+        raise HTTPException(status_code=422, detail="Select a supported exercise before uploading a video.")
     if file.size and file.size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large")
 
-    allowed_types = ["video/mp4", "video/mov", "video/avi", "video/quicktime", "image/jpeg", "image/png"]
+    allowed_types = ["video/mp4", "video/mov", "video/avi", "video/quicktime", "video/x-msvideo"]
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type}")
 
@@ -211,12 +198,33 @@ async def analyze_exercise_form(
     with open(filepath, "wb") as f:
         f.write(content)
 
-    # Analyze form based on real video kinematics
+    # Combine landmark measurements with the configured GPT vision model.
     try:
-        analysis = _analyze_exercise_video(filepath, exercise_name)
+        kinematics = _analyze_exercise_video(filepath, exercise_name)
+        if exercise_name.lower() not in {"squat", "squats"}:
+            # The current deterministic angle scoring is squat-specific.
+            kinematics = {"landmark_frames": 0}
+        analysis = await _analyze_exercise_with_gemini(filepath, exercise_name, kinematics)
+    except AIProviderError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     finally:
         if os.getenv("VERCEL") and os.path.exists(filepath):
             os.remove(filepath)
+
+    score = analysis.get("form_score")
+    if not isinstance(score, (int, float)):
+        raise HTTPException(status_code=422, detail="The exercise could not be assessed clearly. Re-record with your full body visible and the camera steady.")
+    score = round(max(0.0, min(100.0, float(score))), 1)
+    raw_breakdown = analysis.get("breakdown") if isinstance(analysis.get("breakdown"), dict) else {}
+    breakdown = {
+        key: round(max(0.0, min(100.0, float(value))), 1)
+        for key, value in raw_breakdown.items()
+        if key in {"depth", "knee_alignment", "torso_stability", "movement_control"}
+        and isinstance(value, (int, float))
+    }
+    feedback = analysis.get("feedback") if isinstance(analysis.get("feedback"), list) else []
 
     # Find exercise in DB
     exercise = db.query(Exercise).filter(
@@ -228,9 +236,9 @@ async def analyze_exercise_form(
         user_id=current_user.id,
         exercise_id=exercise.id if exercise else None,
         video_path="" if os.getenv("VERCEL") else filepath,
-        form_score=analysis["form_score"],
-        breakdown=analysis["breakdown"],
-        feedback=analysis["feedback"],
+        form_score=score,
+        breakdown=breakdown,
+        feedback=[str(item)[:300] for item in feedback[:5]],
         analyzed_at=datetime.utcnow(),
     )
     db.add(result)
@@ -240,12 +248,14 @@ async def analyze_exercise_form(
     return {
         "analysis_id": result.id,
         "exercise": exercise_name,
-        "form_score": analysis["form_score"],
-        "breakdown": analysis["breakdown"],
-        "feedback": analysis["feedback"],
+        "form_score": score,
+        "breakdown": breakdown,
+        "feedback": [str(item)[:300] for item in feedback[:5]],
+        "confidence": round(_bounded_number(analysis.get("confidence"), 0.0, 0.0, 1.0), 2),
+        "visual_evidence": analysis.get("visual_evidence", ""),
         "primary_improvement": analysis.get("primary_improvement", ""),
         "analyzed_at": result.analyzed_at.isoformat(),
-        "note": "Analysis based on pose estimation pipeline. Results are indicative.",
+        "note": "Gemini Flash reviewed sampled video frames and pose measurements when available. Results are indicative, not medical advice.",
     }
 
 
@@ -264,37 +274,30 @@ async def analyze_food_image(
     if len(content) > max_image_size:
         raise HTTPException(status_code=413, detail=f"Image too large (max {max_image_size // (1024 * 1024)}MB)")
 
-    # ── Gemini Vision Analysis ────────────────────────────────────────────
+    # ── Gemini Flash Vision Analysis ──────────────────────────────────────
     try:
-        mime = file.content_type or "image/jpeg"
-        parsed = _analyze_food_with_gemini(content, mime)
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=str(e),
-        )
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.error("Failed to parse Gemini food response: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail="AI returned an unreadable response. Please try again with a clearer image.",
-        )
+        mime = "image/jpeg" if file.content_type == "image/jpg" else (file.content_type or "image/jpeg")
+        parsed = await _analyze_food_with_gemini(content, mime)
+    except AIProviderError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:
-        logger.error("Gemini vision call failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Food analysis failed: {str(e)}")
+        logger.exception("Food vision analysis failed")
+        raise HTTPException(status_code=422, detail="Food image could not be analyzed. Please try another clear image.") from e
 
-    food_name = parsed.get("food_name", "Unknown Food")
-    region = parsed.get("region", "General")
-    confidence = float(parsed.get("confidence", 0.7))
-    serving_g = int(parsed.get("serving_g", 150))
-    calories = float(parsed.get("calories", 0))
-    protein_g = float(parsed.get("protein_g", 0))
-    carbs_g = float(parsed.get("carbs_g", 0))
-    fat_g = float(parsed.get("fat_g", 0))
-    fiber_g = float(parsed.get("fiber_g", 0))
-    sugar_g = float(parsed.get("sugar_g", 0))
+    food_name = str(parsed.get("food_name") or "Unidentified Food Item")[:120]
+    region = str(parsed.get("region") or "General")[:60]
+    confidence = _bounded_number(parsed.get("confidence"), 0.0, 0.0, 1.0)
+    serving_g = int(_bounded_number(parsed.get("serving_g"), 150, 1, 5000))
+    calories = _bounded_number(parsed.get("calories"), 0, 0, 10000)
+    protein_g = _bounded_number(parsed.get("protein_g"), 0, 0, 1000)
+    carbs_g = _bounded_number(parsed.get("carbs_g"), 0, 0, 1000)
+    fat_g = _bounded_number(parsed.get("fat_g"), 0, 0, 1000)
+    fiber_g = _bounded_number(parsed.get("fiber_g"), 0, 0, 1000)
+    sugar_g = _bounded_number(parsed.get("sugar_g"), 0, 0, 1000)
     brief_note = parsed.get("brief_note", "")
     alternatives = parsed.get("alternatives", [])
+    if not isinstance(alternatives, list):
+        alternatives = []
 
     # ── Optional: Cross-reference with MongoDB food catalog ──────────────
     # If a known food matches in our DB, use verified nutritional data instead
@@ -312,7 +315,7 @@ async def analyze_food_image(
         fat_g = round(db_food.fat_per_100g * factor, 1)
         data_source = "Fortis nutrition database"
     else:
-        data_source = "Gemini AI estimate"
+        data_source = "Gemini Flash estimate"
 
     nutrition_estimate = {
         "food_name": food_name,

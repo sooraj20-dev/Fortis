@@ -7,18 +7,26 @@ import {
   Sparkles,
   Info
 } from 'lucide-react';
-import api from '../../services/api';
+import { getCached } from '../../services/api';
 
 export const ProgressPage: React.FC = () => {
   const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    api.get('/api/progress')
+  const loadProgress = () => {
+    setLoading(true);
+    setLoadError(false);
+    getCached('/api/progress')
       .then((res) => setData(res.data))
       .catch((err) => {
         console.error('Failed to load progress data:', err);
-      });
-  }, []);
+        setLoadError(true);
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(loadProgress, []);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -28,6 +36,9 @@ export const ProgressPage: React.FC = () => {
           Historical adaptation trends and statistical progression projections.
         </p>
       </div>
+
+      {loading && <p className="text-sm text-text-muted" aria-live="polite">Loading progress…</p>}
+      {loadError && <div role="alert" className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300">Progress could not be loaded. <button onClick={loadProgress} className="underline">Retry</button></div>}
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -40,7 +51,7 @@ export const ProgressPage: React.FC = () => {
         <div className="bg-dark-card border border-dark-border rounded-xl p-4">
           <span className="text-xs text-text-muted">Completed Sessions</span>
           <div className="text-2xl font-bold text-white mt-1">
-            {data?.summary?.workouts_completed ?? 0}
+            {data?.summary?.workouts_completed ?? '—'}
           </div>
         </div>
         <div className="bg-dark-card border border-dark-border rounded-xl p-4">
@@ -64,7 +75,7 @@ export const ProgressPage: React.FC = () => {
           <h2 className="text-lg font-bold text-white">Fortis Pulse Statistical Trajectory</h2>
         </div>
 
-        {data?.forecast ? (
+        {data?.forecast && data.forecast.trend_label !== 'insufficient_data' ? (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-dark-surface rounded-xl border border-dark-border">
               <div>
@@ -88,8 +99,9 @@ export const ProgressPage: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="py-8 text-center text-xs text-text-muted">
-            Log workouts and recovery to build statistical trend projections.
+          <div className="py-8 text-center text-xs text-text-muted space-y-1">
+            <p className="font-semibold text-text-secondary">Insufficient Historical Data for Personal Projections</p>
+            <p>At least 3 activity or recovery records are required to project your personal trajectory reliably.</p>
           </div>
         )}
       </div>

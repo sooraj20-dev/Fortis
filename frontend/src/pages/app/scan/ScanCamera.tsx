@@ -132,11 +132,20 @@ const ScanCamera: React.FC = () => {
     setPhase('uploading');
     try {
       stopCamera();
+      // analyzeScan returns the full scan result object; extract scan_id from it
       const res = await analyzeScan(scanId || 1, blob);
-      const targetScanId = res?.scan_id || scanId || 1;
+      // The analyze response may return scan_id directly or nested
+      const targetScanId: number =
+        (res as any)?.scan_id ??
+        (res as any)?.id ??
+        scanId ??
+        1;
       navigate('/scan/processing', { state: { scanId: targetScanId } });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Analysis failed. Please try again.';
+      const msg =
+        e instanceof Error
+          ? e.message
+          : 'Analysis failed. Please try again or upload a video file.';
       setCameraError(msg);
       setPhase('error');
     }
@@ -220,6 +229,12 @@ const ScanCamera: React.FC = () => {
           <div className="absolute inset-0 bg-dark-card/90 flex flex-col items-center justify-center p-6 text-center gap-4">
             <AlertTriangle className="w-10 h-10 text-warning" />
             <p className="text-sm text-text-secondary leading-relaxed">{cameraError}</p>
+            <button
+              onClick={() => { setCameraError(null); setPhase('preview'); startCamera(); }}
+              className="text-xs text-brand-light underline hover:text-white transition-colors"
+            >
+              Try camera again
+            </button>
           </div>
         )}
       </div>

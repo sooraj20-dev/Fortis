@@ -77,6 +77,8 @@ FULL_ONBOARDING = {
 def test_register_returns_onboarding_false():
     data = register_user(make_email())
     assert data["onboarding_complete"] is False
+    headers = auth_headers(data["access_token"])
+    assert client.get("/api/dashboard", headers=headers).status_code == 409
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -116,6 +118,12 @@ def test_complete_onboarding_persists_all_fields():
     assert pf["nutrition_pref"]["meals_per_day"] == 3
     assert pf["nutrition_pref"]["cooking_access"] == "home"
     assert pf["nutrition_pref"]["daily_budget_inr"] == 150.0
+
+    # Baseline answers are profile preferences, not dated daily recovery measurements.
+    recovery = client.get("/api/recovery/today", headers=headers)
+    assert recovery.status_code == 200
+    assert recovery.json()["recovery_score"] is None
+    assert recovery.json()["sleep_hours"] is None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -255,3 +263,32 @@ def test_invalid_onboarding_does_not_complete():
     me = client.get("/api/auth/me", headers=headers)
     assert me.status_code == 200
     assert me.json()["onboarding_complete"] is False
+
+
+def test_recovery_checkin_persists_and_recalculates_score():
+    token = register_user(make_email())["access_token"]
+    headers = auth_headers(token)
+    client.post("/api/onboarding/complete", json=MINIMAL_ONBOARDING, headers=headers)
+    result = client.post("/api/recovery/log", json={
+        "energy_level": 9, "soreness_level": 2, "stress_level": 3, "mood": 8,
+    }, headers=headers)
+    assert result.status_code == 200
+    saved = client.get("/api/recovery/today", headers=headers).json()
+    assert saved["recovery_score"] == result.json()["recovery_score"]
+    assert saved["energy_level"] == 9
+    assert saved["stress_level"] == 3
+
+
+def test_dashboard_and_workout_use_the_same_saved_plan():
+    token = register_user(make_email())["access_token"]
+    headers = auth_headers(token)
+    client.post("/api/onboarding/complete", json=MINIMAL_ONBOARDING, headers=headers)
+    dashboard_plan = client.get("/api/dashboard", headers=headers).json()["today_workout"]
+    workout_plan = client.get("/api/workouts/today", headers=headers).json()
+    assert dashboard_plan is not None
+    assert dashboard_plan["id"] == workout_plan["id"]
+    assert dashboard_plan["status"] == workout_plan["status"]
+    assert dashboard_plan["estimated_duration_min"] == workout_plan["estimated_duration_min"]
+    assert [(x["name"], x["planned_sets"], x["planned_reps"]) for x in dashboard_plan["exercises"]] == [
+        (x["exercise"]["name"], x["planned_sets"], x["planned_reps"]) for x in workout_plan["exercises"]
+    ]

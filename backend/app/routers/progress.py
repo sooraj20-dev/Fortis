@@ -4,14 +4,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from datetime import datetime, timedelta
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.intelligence import FitnessState, FortisDecision, WeeklyReview
 from app.models.workout import Workout, PostWorkoutFeedback, ExerciseFormResult
 from app.ml.progress import forecast_pulse
 from app.schemas.intelligence import FitnessStateResponse
 
-router = APIRouter(prefix="/api/progress", tags=["progress"])
+router = APIRouter(prefix="/api/progress", tags=["progress"], dependencies=[Depends(require_onboarded_user)])
 
 
 @router.get("")
@@ -81,7 +81,7 @@ def get_progress(
     # Stats summary
     completed = len([w for w in workouts if w.status == "COMPLETED"])
     planned = len(workouts)
-    consistency_pct = round(completed / max(planned, 1) * 100, 1)
+    consistency_pct = round(completed / planned * 100, 1) if planned else None
     avg_rpe = round(sum(r["rpe"] for r in rpe_data) / max(len(rpe_data), 1), 1) if rpe_data else None
 
     return {
@@ -149,21 +149,30 @@ def _generate_weekly_review(user_id: int, db: Session) -> dict:
         if fb:
             feedbacks.append(fb)
 
-    avg_rpe = round(sum(f.overall_rpe for f in feedbacks) / max(len(feedbacks), 1), 1) if feedbacks else 6.5
-    avg_recovery = 65.0
+    avg_rpe = round(sum(f.overall_rpe for f in feedbacks) / len(feedbacks), 1) if feedbacks else None
+    from app.models.recovery import RecoveryLog
+    recovery_logs = db.query(RecoveryLog).filter(
+        RecoveryLog.user_id == user_id, RecoveryLog.date >= week_start
+    ).all()
+    recovery_values = [r.recovery_score for r in recovery_logs if r.recovery_score is not None]
+    avg_recovery = round(sum(recovery_values) / len(recovery_values), 1) if recovery_values else None
 
-    consistency_pct = round(completed / max(planned, 1) * 100, 1)
+    consistency_pct = round(completed / planned * 100, 1) if planned else None
 
     # AI insights based on actual data
     insights = []
-    if consistency_pct >= 80:
+    if consistency_pct is None:
+        insights.append("No workout sessions are recorded in this period yet.")
+    elif consistency_pct >= 80:
         insights.append(f"Great consistency this week — {completed}/{planned} workouts completed.")
     elif consistency_pct < 50:
         insights.append(f"Missed some workouts this week ({completed}/{planned}). Let's aim for better consistency.")
     else:
         insights.append(f"Decent week with {completed}/{planned} workouts completed.")
 
-    if avg_rpe > 7.5:
+    if avg_rpe is None:
+        insights.append("Effort trend is unavailable until a workout check-in is recorded.")
+    elif avg_rpe > 7.5:
         insights.append(f"High average effort this week (RPE {avg_rpe}). Consider a deload next week.")
     elif avg_rpe < 5.5:
         insights.append(f"Low perceived effort this week (RPE {avg_rpe}). Ready to increase intensity.")
@@ -171,11 +180,11 @@ def _generate_weekly_review(user_id: int, db: Session) -> dict:
         insights.append(f"Balanced effort levels — average RPE {avg_rpe}.")
 
     next_week = []
-    if consistency_pct >= 80:
+    if consistency_pct is not None and consistency_pct >= 80:
         next_week.append("Maintain current training frequency — you're building great habits.")
     else:
         next_week.append("Prioritize showing up — even 20-minute sessions count.")
-    if avg_rpe > 7.5:
+    if avg_rpe is not None and avg_rpe > 7.5:
         next_week.append("Include one additional recovery session next week.")
     next_week.append("Log your nutrition daily — it directly impacts your Fortis Pulse.")
 
@@ -187,7 +196,7 @@ def _generate_weekly_review(user_id: int, db: Session) -> dict:
         avg_rpe=avg_rpe,
         avg_recovery=avg_recovery,
         consistency_pct=consistency_pct,
-        nutrition_adherence_pct=65.0,
+        nutrition_adherence_pct=None,
         ai_insights=insights,
         next_week_recommendations=next_week,
         generated_at=today,
@@ -202,7 +211,7 @@ def _generate_weekly_review(user_id: int, db: Session) -> dict:
         "consistency_pct": consistency_pct,
         "avg_rpe": avg_rpe,
         "avg_recovery": avg_recovery,
-        "nutrition_adherence_pct": 65.0,
+        "nutrition_adherence_pct": None,
         "ai_insights": insights,
         "next_week_recommendations": next_week,
         "generated_at": today.isoformat(),

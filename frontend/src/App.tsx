@@ -1,31 +1,50 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from './layouts/AppLayout';
 import SplashScreen from './components/SplashScreen';
-import Landing from './pages/Landing';
-import AuthPage from './pages/auth/AuthPage';
-import Onboarding from './pages/Onboarding';
-import Dashboard from './pages/app/Dashboard';
-import WorkoutPage from './pages/app/Workout';
-import NutritionPage from './pages/app/Nutrition';
-import RecoveryPage from './pages/app/Recovery';
-import ProgressPage from './pages/app/Progress';
-import VisionPage from './pages/app/Vision';
-import CoachPage from './pages/app/Coach';
-import ScanOnboarding from './pages/app/scan/ScanOnboarding';
-import ScanCamera from './pages/app/scan/ScanCamera';
-import ScanProcessing from './pages/app/scan/ScanProcessing';
-import ScanResult from './pages/app/scan/ScanResult';
-import ScanBlueprint from './pages/app/scan/ScanBlueprint';
-import ScanHistory from './pages/app/scan/ScanHistory';
-import ScanComparison from './pages/app/scan/ScanComparison';
 import { useAuthStore } from './stores/authStore';
-import api from './services/api';
+import { getCached } from './services/api';
 
-/** Wrap authenticated routes — redirect to /landing if not logged in */
+// â”€â”€ Lazy-loaded pages (each becomes its own JS chunk) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const Landing        = lazy(() => import('./pages/Landing'));
+const AuthPage       = lazy(() => import('./pages/auth/AuthPage'));
+const Onboarding     = lazy(() => import('./pages/Onboarding'));
+const Dashboard      = lazy(() => import('./pages/app/Dashboard'));
+const WorkoutPage    = lazy(() => import('./pages/app/Workout'));
+const NutritionPage  = lazy(() => import('./pages/app/Nutrition'));
+const RecoveryPage   = lazy(() => import('./pages/app/Recovery'));
+const ProgressPage   = lazy(() => import('./pages/app/Progress'));
+const VisionPage     = lazy(() => import('./pages/app/Vision'));
+const CoachPage      = lazy(() => import('./pages/app/Coach'));
+const ScanOnboarding = lazy(() => import('./pages/app/scan/ScanOnboarding'));
+const ScanCamera     = lazy(() => import('./pages/app/scan/ScanCamera'));
+const ScanProcessing = lazy(() => import('./pages/app/scan/ScanProcessing'));
+const ScanResult     = lazy(() => import('./pages/app/scan/ScanResult'));
+const ScanBlueprint  = lazy(() => import('./pages/app/scan/ScanBlueprint'));
+const ScanHistory    = lazy(() => import('./pages/app/scan/ScanHistory'));
+const ScanComparison = lazy(() => import('./pages/app/scan/ScanComparison'));
+
+// â”€â”€ Page transition loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="flex flex-col items-center gap-3 text-text-muted">
+      <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+      <span className="text-sm font-medium">Loading...</span>
+    </div>
+  </div>
+);
+
+/** Wrap authenticated routes â€” redirect to /landing if not logged in */
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return isAuthenticated ? <>{children}</> : <Navigate to="/landing" replace />;
+};
+
+const RequireOnboarding: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const authenticated = useAuthStore((s) => s.isAuthenticated);
+  const complete = useAuthStore((s) => s.onboardingComplete);
+  if (!authenticated) return <Navigate to="/landing" replace />;
+  return complete ? <>{children}</> : <Navigate to="/onboarding" replace />;
 };
 
 /** Redirect authenticated users away from auth / landing pages directly to dashboard */
@@ -41,7 +60,7 @@ function App() {
   // Sync latest persisted onboarding status on mount
   useEffect(() => {
     if (useAuthStore.getState().isAuthenticated) {
-      api.get('/api/auth/me')
+      getCached<{ onboarding_complete?: boolean }>('/api/auth/me')
         .then((res) => {
           if (res.data?.onboarding_complete !== undefined) {
             useAuthStore.getState().setOnboardingComplete(res.data.onboarding_complete);
@@ -53,12 +72,13 @@ function App() {
 
   return (
     <>
-      {/* Splash screen — shown until auth state is restored & min time passes */}
+      {/* Splash screen â€” shown until auth state is restored & min time passes */}
       {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} />}
 
       <Router>
+        <Suspense fallback={<PageLoader />}>
         <Routes>
-          {/* ── Public routes ───────────────────────────── */}
+          {/* â”€â”€ Public routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <Route
             path="/landing"
             element={
@@ -76,7 +96,7 @@ function App() {
             }
           />
 
-          {/* ── Onboarding wizard (full-screen, no sidebar) ── */}
+          {/* â”€â”€ Onboarding wizard (full-screen, no sidebar) â”€â”€ */}
           <Route
             path="/onboarding"
             element={
@@ -86,151 +106,151 @@ function App() {
             }
           />
 
-          {/* ── Protected app routes (RequireAuth) ──── */}
+          {/* â”€â”€ Protected app routes (RequireAuth) â”€â”€â”€â”€ */}
           <Route
             path="/dashboard"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <Dashboard />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/workout"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <WorkoutPage />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/nutrition"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <NutritionPage />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/recovery"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <RecoveryPage />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/progress"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ProgressPage />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/vision"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <VisionPage />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/coach"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <CoachPage />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
 
-          {/* ── Scan routes ────────────────────────────── */}
+          {/* â”€â”€ Scan routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <Route
             path="/scan"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ScanOnboarding />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/scan/camera"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ScanCamera />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/scan/processing"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ScanProcessing />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/scan/result"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ScanResult />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/scan/blueprint"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ScanBlueprint />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/scan/history"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ScanHistory />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
           <Route
             path="/scan/comparison"
             element={
-              <RequireAuth>
+              <RequireOnboarding>
                 <AppLayout>
                   <ScanComparison />
                 </AppLayout>
-              </RequireAuth>
+              </RequireOnboarding>
             }
           />
 
-          {/* ── Root & Wildcard redirects ──────────────── */}
+          {/* â”€â”€ Root & Wildcard redirects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <Route
             path="/"
             element={
@@ -248,6 +268,7 @@ function App() {
             }
           />
         </Routes>
+        </Suspense>
       </Router>
     </>
   );

@@ -16,7 +16,7 @@ The root [`vercel.json`](./vercel.json) builds the Vite frontend and the FastAPI
    - `MONGODB_URL`: a MongoDB connection string for a database reachable from Vercel.
    - `MONGODB_DB_NAME`: the database name (for example, `fortis`).
    - `JWT_SECRET`: a unique, randomly generated secret of at least 32 characters.
-   - `AI_API_KEY` and/or `GEMINI_API_KEY`: optional keys for the AI features that use them.
+   - `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, and `GEMINI_MODEL=gemini-3.8-flash` for the AI Coach and Vision features.
 3. Deploy. The app is served at `/`; the API and interactive API docs are available at `/api/...` and `/docs`.
 
 Vercel functions are stateless: application records are stored in MongoDB, while temporary scan and exercise uploads use `/tmp` and are not retained between requests. The API caps uploads at 4 MB on Vercel to stay below the platform's request-body limit. Video analysis can also exceed the function-duration limit for larger or longer clips; use a dedicated backend host and object storage if those workloads are required.
@@ -86,7 +86,8 @@ The exercise and food catalogs are seeded on backend startup when their collecti
 
 ## 🧠 What Makes Fortis Unique? (The 3 Pillars)
 
-```
+
+
         ┌────────────────────────────────────────────────────────┐
         │                       FORTIS AI                        │
         └──────────────────────────┬─────────────────────────────┘

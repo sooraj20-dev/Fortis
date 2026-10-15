@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.intelligence import FitnessState, FortisDecision
 from app.models.workout import Workout, WorkoutExercise, Exercise, PostWorkoutFeedback
@@ -15,7 +15,7 @@ from app.intelligence.fitness_state import FitnessStateCalculator
 from app.intelligence.decision_engine import FortisDecisionEngine
 from app.schemas.intelligence import DashboardResponse, FitnessStateResponse, FortisDecisionResponse
 
-router = APIRouter(prefix="/api", tags=["dashboard"])
+router = APIRouter(prefix="/api", tags=["dashboard"], dependencies=[Depends(require_onboarded_user)])
 fs_calculator = FitnessStateCalculator()
 decision_engine = FortisDecisionEngine()
 
@@ -55,36 +55,39 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
         except Exception:
             decision = None
 
-    # Today's workout
+    # Today's workout — use the same saved plan and ordering as /api/workouts/today
     today_workout = db.query(Workout).filter(
         Workout.user_id == current_user.id,
         func.date(Workout.date) == today_date
     ).first()
 
+    if not today_workout and current_user.onboarding_completed:
+        try:
+            from app.routers.workouts import _generate_workout
+            _generate_workout(current_user, today_date, db)
+            today_workout = db.query(Workout).filter(
+                Workout.user_id == current_user.id,
+                func.date(Workout.date) == today_date
+            ).first()
+        except Exception:
+            today_workout = None
+
     workout_summary = None
     if today_workout:
-        exercises = db.query(WorkoutExercise).filter(
-            WorkoutExercise.workout_id == today_workout.id
-        ).all()
-        exercise_list = []
-        for we in exercises:
-            ex = db.query(Exercise).filter(Exercise.id == we.exercise_id).first()
-            if ex:
-                exercise_list.append({
-                    "id": ex.id,
-                    "name": ex.name,
-                    "difficulty": ex.difficulty,
-                    "muscle_groups": ex.muscle_groups or [],
-                    "planned_sets": we.planned_sets or 3,
-                    "planned_reps": we.planned_reps or 10,
-                    "planned_weight_kg": we.planned_weight_kg,
-                })
+        from app.routers.workouts import serialize_workout
+        canonical = serialize_workout(today_workout, db)
+        exercise_list = [{
+            "id": item["id"],
+            "name": item["exercise"].get("name"),
+            "difficulty": item["exercise"].get("difficulty"),
+            "muscle_groups": item["exercise"].get("muscle_groups") or [],
+            "planned_sets": item["planned_sets"],
+            "planned_reps": item["planned_reps"],
+            "planned_weight_kg": item["planned_weight_kg"],
+        } for item in canonical["exercises"]]
         workout_summary = {
-            "id": today_workout.id,
-            "workout_type": today_workout.workout_type,
-            "status": today_workout.status,
-            "exercise_count": len(exercises),
-            "estimated_duration_min": today_workout.total_duration_min or len(exercises) * 8,
+            **{key: canonical[key] for key in ("id", "workout_type", "status", "estimated_duration_min")},
+            "exercise_count": len(exercise_list),
             "exercises": exercise_list,
         }
 
@@ -101,10 +104,11 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
     total_calories = sum(fl.calories for fl in food_logs_today)
     total_protein = sum(fl.protein_g for fl in food_logs_today)
     total_carbs = sum(fl.carbs_g for fl in food_logs_today)
-    budget_spent = sum(0 for fl in food_logs_today)  # approximate
-
-    target_calories = 2200.0
-    budget = nutr_pref.daily_budget_inr if nutr_pref else 150.0
+    goal = db.query(Goal).filter(Goal.user_id == current_user.id).first()
+    target_calories = {"STRENGTH": 2400, "MUSCLE": 2600, "WEIGHT_MANAGEMENT": 1800,
+                       "ENDURANCE": 2500, "GENERAL_FITNESS": 2200}.get(
+        goal.primary_goal if goal else "GENERAL_FITNESS", 2200)
+    target_protein = target_calories * 0.25 / 4
 
     nutrition_summary = {
         "total_calories": round(total_calories, 1),
@@ -112,18 +116,22 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
         "total_carbs_g": round(total_carbs, 1),
         "target_calories": target_calories,
         "calories_pct": round(min(100, total_calories / target_calories * 100), 1),
-        "protein_pct": round(min(100, total_protein / 150 * 100), 1),
-        "budget_remaining_inr": round(budget, 2),
+        "target_protein_g": round(target_protein, 1),
+        "protein_pct": round(min(100, total_protein / max(target_protein, 1) * 100), 1),
+        "budget_remaining_inr": None,
+        "budget_inr": nutr_pref.daily_budget_inr if nutr_pref else None,
         "log_count": len(food_logs_today),
     }
 
     # Recovery summary
     latest_recovery = db.query(RecoveryLog).filter(
-        RecoveryLog.user_id == current_user.id
+        RecoveryLog.user_id == current_user.id,
+        func.date(RecoveryLog.date) == today_date,
     ).order_by(desc(RecoveryLog.date)).first()
 
     latest_sleep = db.query(SleepLog).filter(
-        SleepLog.user_id == current_user.id
+        SleepLog.user_id == current_user.id,
+        func.date(SleepLog.date).in_([today_date, today_date - timedelta(days=1)]),
     ).order_by(desc(SleepLog.date)).first()
 
     recovery_summary = {

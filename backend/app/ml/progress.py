@@ -61,17 +61,17 @@ class OLSProgressModel(BaseProgressModel):
 
         valid_history = [float(p) for p in pulse_history if p is not None]
         n = len(valid_history)
-        if n == 0:
+        if n < 3:
             return {
                 "current_trend": 0.0,
                 "trend_label": "insufficient_data",
-                "current_value": None,
+                "current_value": round(valid_history[-1], 1) if n > 0 else None,
                 "forecast_7d": None,
                 "forecast_14d": None,
                 "confidence": 0.0,
-                "data_points": 0,
+                "data_points": n,
                 "model_version": self.version,
-                "disclaimer": "Insufficient history for trajectory calculation.",
+                "disclaimer": "At least 3 activity records are required to project personal trajectory.",
             }
 
         x = [float(i) for i in range(n)]

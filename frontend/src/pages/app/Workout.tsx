@@ -9,49 +9,92 @@ import {
   Flame,
   ChevronRight
 } from 'lucide-react';
-import api from '../../services/api';
+import api, { getCached } from '../../services/api';
 
 export const WorkoutPage: React.FC = () => {
   const [workout, setWorkout] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sessionActive, setSessionActive] = useState(false);
   const [rpe, setRpe] = useState(7);
   const [soreness, setSoreness] = useState(4);
   const [energy, setEnergy] = useState(7);
   const [submittedFeedback, setSubmittedFeedback] = useState(false);
+  const [savingAction, setSavingAction] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.get('/api/workouts/today')
+  const fetchWorkout = () => {
+    setLoading(true);
+    setLoadError(null);
+    getCached('/api/workouts/today')
       .then((res) => setWorkout(res.data))
       .catch((err) => {
         console.error('Failed to load workout:', err);
+        setLoadError('Unable to load scheduled workout. Please try again.');
         setWorkout(null);
       })
       .finally(() => setLoading(false));
-  }, []);
-
-  const handleStartWorkout = () => {
-    if (workout?.id) {
-      api.post(`/api/workouts/${workout.id}/start`).catch(() => {});
-    }
-    setSessionActive(true);
   };
 
-  const handleCompleteWorkout = () => {
-    if (workout?.id) {
-      api.post(`/api/workouts/${workout.id}/complete`, {
+  useEffect(() => {
+    fetchWorkout();
+  }, []);
+
+  const handleStartWorkout = async () => {
+    if (!workout?.id) return;
+    setSavingAction(true);
+    setActionError(null);
+    try {
+      await api.post(`/api/workouts/${workout.id}/start`);
+      setSessionActive(true);
+      fetchWorkout();
+    } catch {
+      setActionError('Could not start this workout. Check your connection and retry.');
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  const handleCompleteWorkout = async () => {
+    if (!workout?.id) return;
+    setSavingAction(true);
+    setActionError(null);
+    try {
+      await api.post(`/api/workouts/${workout.id}/complete`, {
         overall_rpe: rpe,
         energy_level: energy,
         soreness_level: soreness,
         pain_flag: false,
         difficulty_notes: 'Completed session as recommended.'
-      }).catch(() => {});
+      });
+      setSubmittedFeedback(true);
+      fetchWorkout();
+    } catch {
+      setActionError('Workout feedback could not be saved. Check your connection and retry.');
+    } finally {
+      setSavingAction(false);
     }
-    setSubmittedFeedback(true);
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-text-muted">Loading scheduled workout...</div>;
+    return (
+      <div className="max-w-4xl mx-auto p-12 text-center">
+        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-text-muted">Loading scheduled workout plan...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-4xl mx-auto p-8 text-center space-y-3 bg-dark-card border border-dark-border rounded-2xl">
+        <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
+        <p className="text-sm text-text-secondary">{loadError}</p>
+        <button onClick={fetchWorkout} className="fortis-btn-primary py-2 px-5 text-xs">
+          Try Again
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -73,7 +116,7 @@ export const WorkoutPage: React.FC = () => {
             {workout?.workout_type || 'Today\'s Session'}
           </h1>
           <p className="text-sm text-text-secondary">
-            Estimated Duration: {workout?.estimated_duration_min || 30} mins
+            Estimated Duration: {workout?.estimated_duration_min ?? '—'}{workout?.estimated_duration_min != null ? ' mins' : ''}
           </p>
         </div>
 
@@ -81,6 +124,7 @@ export const WorkoutPage: React.FC = () => {
           <button 
             onClick={handleStartWorkout}
             className="fortis-btn-primary flex items-center justify-center gap-2 shadow-glow py-3 px-6"
+            disabled={savingAction}
           >
             <Play className="w-4 h-4 fill-white" />
             <span>Start Session</span>
@@ -88,8 +132,19 @@ export const WorkoutPage: React.FC = () => {
         )}
       </div>
 
+      {actionError && <div role="alert" className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300">{actionError}</div>}
+
       {/* Exercises List */}
       <div className="space-y-3">
+        {(!workout?.exercises || workout.exercises.length === 0) && (
+          <div className="bg-dark-card border border-dark-border rounded-xl p-8 text-center space-y-2">
+            <Dumbbell className="w-8 h-8 text-text-muted mx-auto opacity-50" />
+            <h3 className="text-sm font-bold text-white">No Exercises Scheduled</h3>
+            <p className="text-xs text-text-secondary max-w-sm mx-auto">
+              Your recovery score indicates rest, or your training profile is being calibrated. Complete onboarding or check back after logging recovery.
+            </p>
+          </div>
+        )}
         {workout?.exercises?.map((item: any, index: number) => (
           <div 
             key={item.id || index}
@@ -180,9 +235,10 @@ export const WorkoutPage: React.FC = () => {
 
           <button
             onClick={handleCompleteWorkout}
+            disabled={savingAction}
             className="fortis-btn-primary w-full py-3 font-bold text-sm tracking-wide"
           >
-            Complete Workout & Adapt Future Plan
+            {savingAction ? 'Saving workout…' : 'Complete Workout & Adapt Future Plan'}
           </button>
         </div>
       )}

@@ -5,7 +5,7 @@ from sqlalchemy import func, desc
 from datetime import datetime, timedelta
 from typing import List, Optional
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.workout import Exercise, Workout, WorkoutExercise, ExerciseLog, PostWorkoutFeedback
 from app.models.profile import Goal, Equipment, Schedule, Profile
@@ -15,7 +15,7 @@ from app.intelligence.fitness_state import FitnessStateCalculator
 from app.intelligence.adaptation import adapt_workout_exercises, get_workout_type_for_decision, estimate_workout_duration
 from app.schemas.workout import ExerciseLogCreate, PostWorkoutFeedbackCreate
 
-router = APIRouter(prefix="/api/workouts", tags=["workouts"])
+router = APIRouter(prefix="/api/workouts", tags=["workouts"], dependencies=[Depends(require_onboarded_user)])
 de = FortisDecisionEngine()
 fs_calc = FitnessStateCalculator()
 
@@ -38,6 +38,39 @@ CATEGORY_MAP = {
     "FULL_BODY": "compound",
     "CARDIO": "cardio",
 }
+
+
+def serialize_workout(workout: Workout, db: Session) -> dict:
+    """Canonical read contract shared by dashboard and Workout page."""
+    exercises = db.query(WorkoutExercise).filter(
+        WorkoutExercise.workout_id == workout.id
+    ).order_by(WorkoutExercise.order_index).all()
+    exercises_data = []
+    for we in exercises:
+        ex = db.query(Exercise).filter(Exercise.id == we.exercise_id).first()
+        logs = db.query(ExerciseLog).filter(ExerciseLog.workout_exercise_id == we.id).all()
+        exercises_data.append({
+            "id": we.id,
+            "exercise": {
+                "id": ex.id, "name": ex.name, "muscle_groups": ex.muscle_groups,
+                "equipment_required": ex.equipment_required, "difficulty": ex.difficulty,
+                "instructions": ex.instructions, "category": ex.category,
+            } if ex else {},
+            "planned_sets": we.planned_sets,
+            "planned_reps": we.planned_reps,
+            "planned_weight_kg": we.planned_weight_kg,
+            "order_index": we.order_index,
+            "logs": [{"set_number": l.set_number, "reps_completed": l.reps_completed,
+                      "weight_kg": l.weight_kg, "rpe": l.rpe} for l in logs],
+        })
+    return {
+        "id": workout.id,
+        "workout_type": workout.workout_type,
+        "status": workout.status,
+        "date": workout.date.isoformat(),
+        "estimated_duration_min": workout.total_duration_min,
+        "exercises": exercises_data,
+    }
 
 
 def _select_exercises(
@@ -132,37 +165,7 @@ def get_today_workout(current_user: User = Depends(get_current_user), db: Sessio
     ).first()
 
     if existing:
-        exercises = db.query(WorkoutExercise).filter(
-            WorkoutExercise.workout_id == existing.id
-        ).order_by(WorkoutExercise.order_index).all()
-
-        exercises_data = []
-        for we in exercises:
-            ex = db.query(Exercise).filter(Exercise.id == we.exercise_id).first()
-            logs = db.query(ExerciseLog).filter(ExerciseLog.workout_exercise_id == we.id).all()
-            exercises_data.append({
-                "id": we.id,
-                "exercise": {
-                    "id": ex.id, "name": ex.name, "muscle_groups": ex.muscle_groups,
-                    "equipment_required": ex.equipment_required, "difficulty": ex.difficulty,
-                    "instructions": ex.instructions, "category": ex.category,
-                } if ex else {},
-                "planned_sets": we.planned_sets,
-                "planned_reps": we.planned_reps,
-                "planned_weight_kg": we.planned_weight_kg,
-                "order_index": we.order_index,
-                "logs": [{"set_number": l.set_number, "reps_completed": l.reps_completed,
-                           "weight_kg": l.weight_kg, "rpe": l.rpe} for l in logs],
-            })
-
-        return {
-            "id": existing.id,
-            "workout_type": existing.workout_type,
-            "status": existing.status,
-            "date": existing.date.isoformat(),
-            "estimated_duration_min": existing.total_duration_min,
-            "exercises": exercises_data,
-        }
+        return serialize_workout(existing, db)
 
     # Generate new workout
     return _generate_workout(current_user, today_date, db)
@@ -206,10 +209,7 @@ def _generate_workout(current_user: User, target_date, db: Session):
     exercises = _select_exercises(db, workout_type_key, equipment_list, experience, target_exercise_count, exercises_to_avoid)
 
     if not exercises:
-        # Absolute fallback to any bodyweight exercises
-        exercises = db.query(Exercise).filter(
-            Exercise.difficulty.in_(["BEGINNER", "INTERMEDIATE"])
-        ).limit(4).all()
+        raise HTTPException(status_code=422, detail="No exercises match your saved equipment and limitations. Update your profile to generate a suitable plan.")
 
     workout_label = get_workout_type_for_decision(decision.decision_type, workout_type_key.replace("_", " ").title())
 
@@ -353,21 +353,19 @@ def complete_workout(
     db.add(fb)
 
     # Also update recovery log with latest soreness/energy
-    from app.models.recovery import RecoveryLog
-    recovery_score = round(
-        ((10 - feedback.soreness_level) * 4) +
-        (feedback.energy_level * 4) +
-        ((10 - feedback.overall_rpe) * 2),
-        1
+    from app.models.recovery import RecoveryLog, compute_recovery_score
+    recovery_score = compute_recovery_score(
+        energy=feedback.energy_level,
+        soreness=feedback.soreness_level,
     )
     recovery_log = RecoveryLog(
         user_id=current_user.id,
         date=datetime.utcnow(),
         energy_level=feedback.energy_level,
         soreness_level=feedback.soreness_level,
-        stress_level=5,
-        mood=7,
-        recovery_score=min(100, max(0, recovery_score)),
+        stress_level=None,
+        mood=None,
+        recovery_score=recovery_score,
         logged_at=datetime.utcnow(),
     )
     db.add(recovery_log)

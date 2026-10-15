@@ -2,16 +2,15 @@ import React, { useEffect, useState } from 'react';
 import BrandLogo from './BrandLogo';
 
 /**
- * SplashScreen — shown on first mount while auth state is being restored from localStorage.
- * Fades out automatically after `minMs` milliseconds.
+ * Brief branded transition while the app mounts. Auth is restored synchronously by Zustand.
  */
 const SplashScreen: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [fading, setFading] = useState(false);
 
   useEffect(() => {
-    // Start fade after 1.4 s, call onDone 400 ms later (after fade)
-    const fadeTimer = setTimeout(() => setFading(true), 1400);
-    const doneTimer = setTimeout(onDone, 1800);
+    // Keep the transition short so it never feels like an app-wide loading gate.
+    const fadeTimer = setTimeout(() => setFading(true), 100);
+    const doneTimer = setTimeout(onDone, 300);
     return () => {
       clearTimeout(fadeTimer);
       clearTimeout(doneTimer);

@@ -28,8 +28,7 @@ const ScanProcessing: React.FC = () => {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    if (!scanId) { navigate('/scan'); return; }
-
+    // If no scanId, still run the animation and fall back to /scan/result (latest scan)
     let total = 0;
     STEPS.forEach((step, i) => {
       total += step.duration;
@@ -40,10 +39,13 @@ const ScanProcessing: React.FC = () => {
       try { await getLatestScan(); } catch { /* ignore */ }
       setDone(true);
     }, total);
-  }, [scanId, navigate]);
+  }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (done) setTimeout(() => navigate('/scan/result', { state: { scanId } }), 700);
+    if (done) {
+      // Navigate to result — pass scanId if we have one, otherwise latest scan will be fetched
+      setTimeout(() => navigate('/scan/result', { state: scanId ? { scanId } : {} }), 700);
+    }
   }, [done, scanId, navigate]);
 
   const pct = done ? 100 : Math.round(((completedSteps + 1) / STEPS.length) * 100);

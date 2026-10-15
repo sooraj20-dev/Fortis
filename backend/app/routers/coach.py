@@ -4,17 +4,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from datetime import datetime, timedelta
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
 from app.models.intelligence import ChatSession, ChatMessage, FitnessState, FortisDecision
 from app.models.profile import Goal, NutritionPreference
 from app.models.recovery import RecoveryLog, SleepLog
 from app.models.workout import Workout, PostWorkoutFeedback
-from app.ai.provider import get_ai_provider
+from app.ai.provider import AIProviderError, get_ai_provider
 from app.schemas.intelligence import ChatMessageCreate
 import json
 
-router = APIRouter(prefix="/api/coach", tags=["coach"])
+router = APIRouter(prefix="/api/coach", tags=["coach"], dependencies=[Depends(require_onboarded_user)])
 
 SYSTEM_PROMPT = """You are Fortis, an AI fitness coach. You have access to the user's actual fitness data, not general knowledge about fitness.
 
@@ -23,9 +23,12 @@ IMPORTANT RULES:
 2. You NEVER invent numbers or facts about the user
 3. You explain Fortis decisions using the actual reasons stored in the system
 4. You are supportive, clear, and concise
-5. You can modify workout suggestions, explain decisions, suggest foods within budget
+5. You may suggest changes, but you cannot change workouts, log food, or update user data
 6. You NEVER give medical advice or diagnose conditions
 7. When discussing food, prioritize Indian/Kerala options matching the user's preferences
+8. Treat null values, empty reasons, and 'Data loading...' as missing data; ask a brief follow-up or give clearly labeled general guidance
+9. Clearly distinguish stored Fortis measurements from estimates and general recommendations
+10. When referring to body scan findings or metrics, refer to them using official Fortis Scan terms like 'Movement Quality', 'Joint Mobility', and 'Fortis Scan'
 
 You are the communication layer of Fortis intelligence — the brain is the decision engine, you are the voice."""
 
@@ -96,24 +99,24 @@ def _build_user_context(user_id: int, db: Session) -> dict:
         }
 
     return {
-        "fortis_pulse": state.fortis_pulse if state else 65.0,
-        "readiness_score": state.readiness_score if state else 65.0,
-        "fatigue_risk": state.fatigue_risk if state else 35.0,
-        "recovery_score": state.recovery_score if state else 65.0,
-        "consistency_score": state.consistency_score if state else 70.0,
-        "decision_type": decision.decision_type if decision else "NORMAL",
-        "reasons": decision.reasons if decision else ["Data loading..."],
+        "fortis_pulse": state.fortis_pulse if state else None,
+        "readiness_score": state.readiness_score if state else None,
+        "fatigue_risk": state.fatigue_risk if state else None,
+        "recovery_score": state.recovery_score if state else None,
+        "consistency_score": state.consistency_score if state else None,
+        "decision_type": decision.decision_type if decision else None,
+        "reasons": decision.reasons if decision else [],
         "recommendations": decision.recommendations if decision else [],
-        "adjustment_factor": decision.adjustment_factor if decision else 1.0,
-        "energy_level": latest_recovery.energy_level if latest_recovery else 7,
-        "soreness_level": latest_recovery.soreness_level if latest_recovery else 4,
-        "stress_level": latest_recovery.stress_level if latest_recovery else 5,
-        "sleep_hours": latest_sleep.duration_hours if latest_sleep else 7.0,
-        "primary_goal": goal.primary_goal if goal else "GENERAL_FITNESS",
-        "experience_level": goal.experience_level if goal else "INTERMEDIATE",
-        "daily_budget_inr": nutr_pref.daily_budget_inr if nutr_pref else 150.0,
-        "regional_preference": nutr_pref.regional_preference if nutr_pref else "Kerala",
-        "diet_type": nutr_pref.diet_type if nutr_pref else "non_vegetarian",
+        "adjustment_factor": decision.adjustment_factor if decision else None,
+        "energy_level": latest_recovery.energy_level if latest_recovery else None,
+        "soreness_level": latest_recovery.soreness_level if latest_recovery else None,
+        "stress_level": latest_recovery.stress_level if latest_recovery else None,
+        "sleep_hours": latest_sleep.duration_hours if latest_sleep else None,
+        "primary_goal": goal.primary_goal if goal else None,
+        "experience_level": goal.experience_level if goal else None,
+        "daily_budget_inr": nutr_pref.daily_budget_inr if nutr_pref else None,
+        "regional_preference": nutr_pref.regional_preference if nutr_pref else None,
+        "diet_type": nutr_pref.diet_type if nutr_pref else None,
         "last_rpe": latest_feedback.overall_rpe if latest_feedback else None,
         "scan": scan_info,
         "comparison": comparison_info,
@@ -198,11 +201,13 @@ async def send_message(
     messages.append({"role": "system", "content": ctx_str})
     for msg in history:
         messages.append({"role": msg.role, "content": msg.content})
-    messages.append({"role": "user", "content": data.content})
 
     # Get AI response
-    provider = get_ai_provider()
-    response = await provider.complete(messages)
+    try:
+        provider = get_ai_provider()
+        response = await provider.complete(messages)
+    except AIProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     # Save assistant response
     assistant_msg = ChatMessage(

@@ -64,11 +64,11 @@ class NutritionSummary(BaseModel):
 
 
 class MealPlanRequest(BaseModel):
-    daily_budget_inr: float = 150.0
-    goal: str = "GENERAL_FITNESS"
-    regional_preference: str = "Kerala"
-    diet_type: str = "non_vegetarian"
-    allergies: List[str] = []
+    daily_budget_inr: Optional[float] = None
+    goal: Optional[str] = None
+    regional_preference: Optional[str] = None
+    diet_type: Optional[str] = None
+    allergies: Optional[List[str]] = None
     available_ingredients: Optional[List[str]] = None
 
 

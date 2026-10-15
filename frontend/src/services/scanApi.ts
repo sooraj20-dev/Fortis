@@ -1,4 +1,4 @@
-import api from './api';
+import api, { getCached } from './api';
 import type {
   ScanResult,
   ScanListItem,
@@ -42,11 +42,11 @@ export async function analyzeScan(
 /** Get the latest completed scan for the current user */
 export async function getLatestScan(): Promise<ScanResult | null> {
   try {
-    const res = await api.get('/api/scan/latest');
+    const res = await getCached<ScanResult & { has_scan?: boolean }>('/api/scan/latest');
     if (res.data && res.data.has_scan === false) {
       return null;
     }
-    return res.data;
+    return res.data as ScanResult;
   } catch {
     return null;
   }
@@ -54,19 +54,19 @@ export async function getLatestScan(): Promise<ScanResult | null> {
 
 /** Get scan history list */
 export async function getScanHistory(): Promise<ScanListItem[]> {
-  const res = await api.get('/api/scan/history');
+  const res = await getCached<ScanListItem[]>('/api/scan/history');
   return res.data;
 }
 
 /** Get a specific scan by ID */
 export async function getScanById(scanId: number): Promise<ScanResult> {
-  const res = await api.get(`/api/scan/${scanId}`);
+  const res = await getCached<ScanResult>(`/api/scan/${scanId}`);
   return res.data;
 }
 
 /** Get comparison between two scans */
 export async function getScanComparison(scanId: number): Promise<ScanComparison> {
-  const res = await api.get(`/api/scan/${scanId}/comparison`);
+  const res = await getCached<ScanComparison>(`/api/scan/${scanId}/comparison`);
   return res.data;
 }
 

@@ -102,6 +102,26 @@ const ScanComparison: React.FC = () => {
     );
   }
 
+  // Baseline scan — backend returned has_comparison: false
+  if ((comparison as any).has_comparison === false) {
+    return (
+      <div className="max-w-lg mx-auto text-center py-20 space-y-5">
+        <div className="relative overflow-hidden bg-dark-card border border-dark-border rounded-3xl p-12">
+          <div className="relative z-10 space-y-4">
+            <ScanLine className="w-12 h-12 text-brand-light mx-auto" />
+            <h2 className="text-xl font-black text-white tracking-tight">This Is Your Baseline</h2>
+            <p className="text-sm text-text-muted">
+              {(comparison as any).summary || 'Complete another scan to see your movement evolution.'}
+            </p>
+            <button onClick={() => navigate('/scan')} className="fortis-btn-primary px-8 py-3.5 font-black tracking-wide">
+              START ANOTHER SCAN
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const c = comparison;
   const currentDate  = new Date(c.current_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   const previousDate = new Date(c.previous_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });

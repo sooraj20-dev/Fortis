@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { FortisPulse } from '../../components/fortis/FortisPulse';
 import { FortisDecision } from '../../components/fortis/FortisDecision';
 import {
@@ -21,7 +21,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import api from '../../services/api';
+import api, { getCached } from '../../services/api';
 import { getLatestScan } from '../../services/scanApi';
 import { useAuthStore } from '../../stores/authStore';
 import Onboarding from '../Onboarding';
@@ -45,7 +45,7 @@ export const Dashboard: React.FC = () => {
 
   const fetchDashboardData = () => {
     setLoading(true);
-    api.get('/api/dashboard')
+    getCached('/api/dashboard')
       .then((res) => {
         setData(res.data);
       })
@@ -128,7 +128,7 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
-      {/* ── ONBOARDING WIZARD MODAL (ONLY FOR NEW REGISTERED USERS) ── */}
+      {/* â”€â”€ ONBOARDING WIZARD MODAL (ONLY FOR NEW REGISTERED USERS) â”€â”€ */}
       {showOnboardingModal && !onboardingComplete && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
           <div className="relative w-full max-w-3xl bg-dark-bg border border-dark-border rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto hide-scrollbar">
@@ -156,7 +156,7 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ── NEW USER SETUP BANNER (ONLY FOR NEW REGISTERED USERS BEFORE COMPLETION) ── */}
+      {/* â”€â”€ NEW USER SETUP BANNER (ONLY FOR NEW REGISTERED USERS BEFORE COMPLETION) â”€â”€ */}
       {!onboardingComplete && isNewRegistration && (
         <div className="relative overflow-hidden bg-gradient-to-r from-brand/20 via-dark-card to-dark-card border-2 border-brand/40 rounded-3xl p-6 sm:p-7 shadow-glow">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
@@ -187,7 +187,7 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ── 1. HEADER & ATHLETE SUMMARY ── */}
+      {/* â”€â”€ 1. HEADER & ATHLETE SUMMARY â”€â”€ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5 mb-1">
@@ -203,7 +203,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <p className="text-xs sm:text-sm text-text-secondary">
             {onboardingComplete
-              ? `AI Continuous Adaptation: Calibrated for ${goalTitle} • ${locationTitle} Setup • ${cuisineTitle} Nutrition`
+              ? `AI Continuous Adaptation: Calibrated for ${goalTitle} â€¢ ${locationTitle} Setup â€¢ ${cuisineTitle} Nutrition`
               : 'Complete your onboarding questions to activate your personalized AI training cycle.'}
           </p>
         </div>
@@ -226,7 +226,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ── 2. ONBOARDING BLUEPRINT STRIP (SIMPLE & CONCISE) ── */}
+      {/* â”€â”€ 2. ONBOARDING BLUEPRINT STRIP (SIMPLE & CONCISE) â”€â”€ */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {/* Goal Card */}
         <div className="bg-dark-card border border-dark-border/80 rounded-2xl p-4 shadow-card hover:border-brand/30 transition-colors">
@@ -248,7 +248,7 @@ export const Dashboard: React.FC = () => {
             {ob.days_per_week || 3} Days / Week
           </h4>
           <p className="text-[11px] text-text-secondary mt-0.5 truncate">
-            {locationTitle} • {ob.workout_duration_min || 45} mins
+            {locationTitle} â€¢ {ob.workout_duration_min || 45} mins
           </p>
         </div>
 
@@ -260,7 +260,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <h4 className="text-sm sm:text-base font-black text-white truncate">{dietTitle}</h4>
           <p className="text-[11px] text-text-secondary mt-0.5 truncate">
-            {cuisineTitle} • ₹{ob.daily_budget_inr || 150}/day
+            {cuisineTitle} â€¢ â‚¹{ob.daily_budget_inr || 150}/day
           </p>
         </div>
 
@@ -271,17 +271,25 @@ export const Dashboard: React.FC = () => {
             <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">AI Safeguards</span>
           </div>
           <h4 className="text-sm sm:text-base font-black text-white truncate">
-            {exercisesToAvoid.length > 0 ? `${exercisesToAvoid.length} Exercises Filtered` : 'All Exercises Safe'}
+            {exercisesToAvoid.length > 0
+              ? `${exercisesToAvoid.length} Exercises Filtered`
+              : onboardingComplete
+                ? 'Baseline Assessed Â· No Restrictions Logged'
+                : 'Limitation Assessment Pending'}
           </h4>
           <p className="text-[11px] text-text-secondary mt-0.5 truncate">
-            {ob.injury_notes ? `Note: ${ob.injury_notes}` : 'No movement restrictions'}
+            {ob.injury_notes
+              ? `Note: ${ob.injury_notes}`
+              : onboardingComplete
+                ? 'No movement restrictions reported'
+                : 'Complete onboarding assessment'}
           </p>
         </div>
       </div>
 
-      {/* ── 3. MAIN TRAINING & BIOMETRICS (7 COLS / 5 COLS) ── */}
+      {/* â”€â”€ 3. MAIN TRAINING & BIOMETRICS (7 COLS / 5 COLS) â”€â”€ */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* ── LEFT: TODAY'S AI WORKOUT (TAILORED FROM ONBOARDING) ── */}
+        {/* â”€â”€ LEFT: TODAY'S AI WORKOUT (TAILORED FROM ONBOARDING) â”€â”€ */}
         <div className="lg:col-span-7 flex flex-col gap-4">
           <div className="bg-dark-card border border-brand/30 rounded-3xl p-6 shadow-glow relative overflow-hidden flex-1 flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-64 h-64 bg-radial-orange pointer-events-none opacity-40" />
@@ -348,7 +356,7 @@ export const Dashboard: React.FC = () => {
               <div className="space-y-2 mb-6">
                 <div className="flex items-center justify-between text-xs font-bold text-text-muted uppercase tracking-wider px-1">
                   <span>Planned Exercises</span>
-                  <span>Target Sets × Reps</span>
+                  <span>Target Sets Ã— Reps</span>
                 </div>
 
                 {exercises.length > 0 ? (
@@ -371,7 +379,7 @@ export const Dashboard: React.FC = () => {
 
                       <div className="text-right">
                         <span className="text-xs font-bold text-brand-light">
-                          {ex.planned_sets || 3} sets × {ex.planned_reps || 10} reps
+                          {ex.planned_sets || 3} sets Ã— {ex.planned_reps || 10} reps
                         </span>
                       </div>
                     </div>
@@ -396,7 +404,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* ── RIGHT: PULSE, DECISION & SCAN ── */}
+        {/* â”€â”€ RIGHT: PULSE, DECISION & SCAN â”€â”€ */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           {/* Signature Metric: Fortis Pulse */}
           <div className="bg-dark-card border border-dark-border rounded-3xl p-6 shadow-card">
@@ -440,13 +448,13 @@ export const Dashboard: React.FC = () => {
               to={latestScan ? '/scan/result' : '/scan'}
               className="fortis-btn-secondary w-full py-2 text-center text-xs font-bold block"
             >
-              {latestScan ? 'View Scan Blueprint →' : 'Start Camera Scan →'}
+              {latestScan ? 'View Scan Blueprint â†’' : 'Start Camera Scan â†’'}
             </Link>
           </div>
         </div>
       </div>
 
-      {/* ── 4. SECONDARY ROW: NUTRITION & RECOVERY SUMMARIES ── */}
+      {/* â”€â”€ 4. SECONDARY ROW: NUTRITION & RECOVERY SUMMARIES â”€â”€ */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Nutrition Snapshot */}
         <div className="bg-dark-card border border-dark-border rounded-2xl p-5 shadow-card">
@@ -456,7 +464,7 @@ export const Dashboard: React.FC = () => {
               <h3 className="font-bold text-sm text-white">Regional Nutrition Blueprint</h3>
             </div>
             <Link to="/nutrition" className="text-xs text-brand-light font-semibold hover:underline">
-              Manage →
+              Manage â†’
             </Link>
           </div>
 
@@ -490,12 +498,12 @@ export const Dashboard: React.FC = () => {
             <div className="p-3 bg-dark-surface rounded-xl flex items-center justify-between text-xs">
               <div>
                 <span className="text-text-muted block text-[10px] uppercase font-bold">Cuisine & Diet</span>
-                <span className="text-white font-semibold">{cuisineTitle} • {dietTitle}</span>
+                <span className="text-white font-semibold">{cuisineTitle} â€¢ {dietTitle}</span>
               </div>
               <div className="text-right">
                 <span className="text-text-muted block text-[10px] uppercase font-bold">Daily Budget</span>
                 <span className="font-bold text-emerald-400">
-                  ₹{data?.nutrition_summary?.budget_remaining_inr ?? ob.daily_budget_inr ?? 150}
+                  â‚¹{data?.nutrition_summary?.budget_remaining_inr ?? ob.daily_budget_inr ?? 150}
                 </span>
               </div>
             </div>
@@ -510,7 +518,7 @@ export const Dashboard: React.FC = () => {
               <h3 className="font-bold text-sm text-white">Recovery & Lifestyle Baseline</h3>
             </div>
             <Link to="/recovery" className="text-xs text-brand-light font-semibold hover:underline">
-              Log Details →
+              Log Details â†’
             </Link>
           </div>
 
@@ -521,7 +529,7 @@ export const Dashboard: React.FC = () => {
                 <span className="text-base font-extrabold text-success">
                   {data?.recovery_summary?.recovery_score !== undefined && data.recovery_summary.recovery_score !== null
                     ? `${Math.round(data.recovery_summary.recovery_score)}%`
-                    : '—'}
+                    : 'â€”'}
                 </span>
               </div>
               <div className="p-3 bg-dark-surface rounded-xl text-center">
@@ -529,7 +537,7 @@ export const Dashboard: React.FC = () => {
                 <span className="text-base font-extrabold text-white">
                   {data?.recovery_summary?.sleep_hours !== undefined && data.recovery_summary.sleep_hours !== null
                     ? `${data.recovery_summary.sleep_hours}h`
-                    : '—'}
+                    : 'â€”'}
                 </span>
               </div>
               <div className="p-3 bg-dark-surface rounded-xl text-center">
@@ -537,7 +545,7 @@ export const Dashboard: React.FC = () => {
                 <span className="text-base font-extrabold text-brand-light">
                   {data?.recovery_summary?.energy_level !== undefined && data.recovery_summary.energy_level !== null
                     ? `${data.recovery_summary.energy_level}/10`
-                    : '—'}
+                    : 'â€”'}
                 </span>
               </div>
             </div>

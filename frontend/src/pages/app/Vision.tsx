@@ -180,7 +180,7 @@ export const VisionPage: React.FC = () => {
                 className="fortis-btn-primary w-full py-2.5 flex items-center justify-center gap-2"
               >
                 <Upload className="w-4 h-4" />
-                <span>{analyzing ? 'Extracting Pose Landmarks...' : 'Upload Video File for Analysis'}</span>
+                <span>{analyzing ? 'Analyzing with Gemini Flash...' : 'Upload Video File for Analysis'}</span>
               </button>
             </div>
           </div>
@@ -209,6 +209,11 @@ export const VisionPage: React.FC = () => {
                     <span className="text-2xl font-black text-success">
                       {formResult.form_score} / 100
                     </span>
+                    {formResult.confidence != null && (
+                      <span className="block text-[10px] text-text-muted">
+                        {confidencePct(formResult.confidence)} assessment confidence
+                      </span>
+                    )}
                   </div>
                   <Award className="w-8 h-8 text-success" />
                 </div>
@@ -227,7 +232,7 @@ export const VisionPage: React.FC = () => {
               {/* Feedback */}
               <div className="space-y-2 text-xs">
                 <h4 className="font-bold text-text-secondary uppercase tracking-wider">
-                  Algorithmic Kinematic Feedback
+                  Gemini Flash Form Feedback
                 </h4>
                 {formResult.feedback?.map((f: string, i: number) => (
                   <div key={i} className="flex items-start gap-2 text-gray-300">
@@ -271,7 +276,7 @@ export const VisionPage: React.FC = () => {
                 {isDragOver ? 'Drop image to analyze' : 'Upload or Drop Food Photograph'}
               </h3>
               <p className="text-xs text-text-muted max-w-sm mx-auto">
-                Powered by Google Gemini Vision AI. Supports Indian, Kerala, and global cuisine.
+                Powered by Gemini Flash vision. Supports Indian, Kerala, and global cuisine.
                 Works with any food photo — rice, curry, snacks, beverages.
               </p>
               <input
@@ -322,7 +327,7 @@ export const VisionPage: React.FC = () => {
                 <div className="flex items-center gap-3 p-4 bg-dark-surface border border-brand/20 rounded-xl">
                   <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                   <span className="text-sm text-text-secondary">
-                    Analyzing with Gemini Vision AI — identifying food and estimating nutrition...
+                    Analyzing with Gemini Flash — identifying food and estimating nutrition...
                   </span>
                 </div>
               )}
@@ -331,9 +336,20 @@ export const VisionPage: React.FC = () => {
 
           {/* Error */}
           {foodError && (
-            <div className="p-3 bg-danger/10 border border-danger/30 rounded-xl text-danger text-xs flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{foodError}</span>
+            <div className="p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{foodError}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setFoodError(null);
+                  foodInputRef.current?.click();
+                }}
+                className="fortis-btn-secondary py-1.5 px-3 text-xs self-start sm:self-auto shrink-0"
+              >
+                Try Again
+              </button>
             </div>
           )}
 
@@ -346,7 +362,7 @@ export const VisionPage: React.FC = () => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
-                      Gemini AI Identified
+                      Gemini Flash Identified
                     </span>
                     {foodResult.top_prediction?.is_healthy === true && (
                       <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">

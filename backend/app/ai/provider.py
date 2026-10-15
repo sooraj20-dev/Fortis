@@ -4,7 +4,7 @@ AI Provider Abstraction — The Fortis AI layer.
 Architecture:
   AIProvider (abstract)
    ├── MockAIProvider    — Always works, no API key needed
-   ├── OpenAIProvider    — Real GPT-4o-mini calls
+  ├── GeminiProvider    — Gemini API calls
    └── (LocalModel)      — Extensible
 
 The AI Coach uses this provider to generate natural-language explanations
@@ -13,10 +13,14 @@ The brain is FortisDecisionEngine.
 """
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
-from app.config import settings
+from app.config import settings, get_gemini_api_key
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class AIProviderError(RuntimeError):
+    """Raised when the configured AI service cannot produce a response."""
 
 
 class AIResponse:
@@ -37,13 +41,22 @@ class AIProvider(ABC):
 
 
 def get_ai_provider() -> "AIProvider":
-    """Factory function — returns configured provider."""
+    """Return only the explicitly configured provider; never hide a provider failure with mock data."""
     provider_name = settings.AI_PROVIDER.lower()
-    if provider_name == "openai" and settings.AI_API_KEY:
+    if provider_name == "openai":
+        if not settings.AI_API_KEY.strip():
+            raise AIProviderError("AI_API_KEY is not configured on the backend.")
         from app.ai.openai_provider import OpenAIProvider
         return OpenAIProvider()
-    else:
+    if provider_name == "gemini":
+        if not get_gemini_api_key():
+            raise AIProviderError("GEMINI_API_KEY is not configured on the backend.")
+        from app.ai.gemini_provider import GeminiProvider
+        return GeminiProvider()
+
+    if provider_name in {"mock", "local"}:
         from app.ai.mock_provider import MockAIProvider
-        if provider_name == "openai" and not settings.AI_API_KEY:
-            logger.warning("OpenAI provider selected but no API key configured. Using MockAIProvider.")
+        logger.warning("AI_PROVIDER=%s; using the local mock provider", provider_name)
         return MockAIProvider()
+
+    raise AIProviderError(f"Unsupported AI_PROVIDER '{settings.AI_PROVIDER}'. Configure gemini or openai.")

@@ -1,4 +1,4 @@
-"""Profile router — profile CRUD, onboarding"""
+﻿"""Profile router â€” profile CRUD, onboarding"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -49,9 +49,9 @@ def _build_full_profile(current_user: User, db: Session) -> FullProfileResponse:
     )
 
 
-# ─────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # GET /api/profile
-# ─────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.get("/profile", response_model=FullProfileResponse)
 def get_profile(
@@ -61,9 +61,9 @@ def get_profile(
     return _build_full_profile(current_user, db)
 
 
-# ─────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # POST /api/onboarding/complete
-# ─────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("/onboarding/complete")
 def complete_onboarding(
@@ -73,11 +73,11 @@ def complete_onboarding(
 ):
     """
     Persist all onboarding wizard fields for the authenticated user.
-    Safe to call multiple times — uses upsert (update-or-create) logic.
+    Safe to call multiple times â€” uses upsert (update-or-create) logic.
     Generates starter workout + nutrition plans after a successful save.
     """
 
-    # ── 1. Profile (Step 1 + Step 2 location + Step 5 readiness) ──
+    # â”€â”€ 1. Profile (Step 1 + Step 2 location + Step 5 readiness) â”€â”€
     profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
     profile_fields = dict(
         age=data.age,
@@ -99,7 +99,7 @@ def complete_onboarding(
         profile = Profile(user_id=current_user.id, **profile_fields)
         db.add(profile)
 
-    # ── 2. Goal ───────────────────────────────────────────────────
+    # â”€â”€ 2. Goal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     goal = db.query(Goal).filter(Goal.user_id == current_user.id).first()
     if goal:
         goal.primary_goal = data.primary_goal
@@ -113,7 +113,7 @@ def complete_onboarding(
         )
         db.add(goal)
 
-    # ── 3. Equipment ──────────────────────────────────────────────
+    # â”€â”€ 3. Equipment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     eq = db.query(Equipment).filter(Equipment.user_id == current_user.id).first()
     if eq:
         eq.equipment_list = data.equipment_list
@@ -122,7 +122,7 @@ def complete_onboarding(
         eq = Equipment(user_id=current_user.id, equipment_list=data.equipment_list)
         db.add(eq)
 
-    # ── 4. Schedule ───────────────────────────────────────────────
+    # â”€â”€ 4. Schedule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     sched = db.query(Schedule).filter(Schedule.user_id == current_user.id).first()
     if sched:
         sched.days_per_week = data.days_per_week
@@ -138,7 +138,7 @@ def complete_onboarding(
         )
         db.add(sched)
 
-    # ── 5. Nutrition preferences ──────────────────────────────────
+    # â”€â”€ 5. Nutrition preferences â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     nutr = db.query(NutritionPreference).filter(NutritionPreference.user_id == current_user.id).first()
     nutr_fields = dict(
         diet_type=data.diet_type,
@@ -158,45 +158,13 @@ def complete_onboarding(
         nutr = NutritionPreference(user_id=current_user.id, **nutr_fields)
         db.add(nutr)
 
-    # ── 6. Mark user as onboarded ─────────────────────────────────
+    # â”€â”€ 6. Mark user as onboarded â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     current_user.onboarding_completed = True
     db.add(current_user)
     db.flush()
 
-    # ── 7. Optional recovery seed from lifestyle answers ──────────
-    if data.typical_sleep_hours is not None:
-        # Only record if this is the first entry — don't duplicate on re-submit
-        existing_sleep = db.query(SleepLog).filter(SleepLog.user_id == current_user.id).first()
-        if not existing_sleep:
-            sleep_log = SleepLog(
-                user_id=current_user.id,
-                date=datetime.utcnow(),
-                duration_hours=data.typical_sleep_hours,
-                quality=data.typical_sleep_quality or 7,
-                logged_at=datetime.utcnow(),
-            )
-            db.add(sleep_log)
+    # Onboarding lifestyle answers are not daily recovery measurements.
 
-    if data.typical_energy_level is not None or data.typical_soreness_level is not None:
-        existing_recovery = db.query(RecoveryLog).filter(RecoveryLog.user_id == current_user.id).first()
-        if not existing_recovery:
-            energy = data.typical_energy_level or 7
-            soreness = data.typical_soreness_level or 3
-            stress = data.typical_stress_level or 5
-            recovery_score = round(((10 - soreness) * 4) + (energy * 4) + ((10 - stress) * 2), 1)
-            recovery_log = RecoveryLog(
-                user_id=current_user.id,
-                date=datetime.utcnow(),
-                energy_level=energy,
-                soreness_level=soreness,
-                stress_level=stress,
-                mood=7,
-                recovery_score=min(100.0, max(0.0, recovery_score)),
-                logged_at=datetime.utcnow(),
-            )
-            db.add(recovery_log)
-
-    # ── 8. Starter workout plan ───────────────────────────────────
     try:
         existing_workout = db.query(Workout).filter(
             Workout.user_id == current_user.id,
@@ -208,7 +176,7 @@ def complete_onboarding(
     except Exception as e:
         logger.warning(f"Starter workout generation note: {e}")
 
-    # ── 9. Starter nutrition/meal plan ────────────────────────────
+    # â”€â”€ 9. Starter nutrition/meal plan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try:
         from app.nutrition.budget_optimizer import generate_meal_plan
         from app.models.nutrition import MealPlan
@@ -246,9 +214,9 @@ def complete_onboarding(
     }
 
 
-# ─────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # PATCH /api/profile  (post-onboarding edits)
-# ─────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.patch("/profile", response_model=FullProfileResponse)
 def update_profile(
