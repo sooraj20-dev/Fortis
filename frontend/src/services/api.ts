@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { AxiosResponse } from 'axios';
 import { useAuthStore } from '../stores/authStore';
 
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '');
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? `http://${window.location.hostname}:8000` : '');
 
 export const api = axios.create({
   baseURL: API_URL,

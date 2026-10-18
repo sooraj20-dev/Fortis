@@ -57,6 +57,7 @@ After first-time setup, run:
 The launchers start:
 - **Frontend App**: [http://localhost:5173](http://localhost:5173)
 - **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **On another device on the same Wi-Fi/network**: open the `On this network` frontend URL printed by the launcher. If it is unreachable, allow Fortis/Python and Node.js through Windows Firewall on a private network.
 
 ### Manual start
 
@@ -70,8 +71,10 @@ python run.py
 **2. Start Frontend:**
 ```powershell
 cd frontend
-npm run dev
+npm run dev -- --host 0.0.0.0
 ```
+
+Open the frontend using this computer's local network IP address (for example, `http://192.168.1.25:5173`) from the other device. Both devices must be on the same network.
 
 ---
 
