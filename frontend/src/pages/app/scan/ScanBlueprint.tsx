@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { generateBlueprint } from '../../../services/scanApi';
 import type { Blueprint } from '../../../types/scan';
+import SplashScreen from '../../../components/SplashScreen';
 
 const priorityDot = (p: string) => {
   if (p === 'high')   return 'bg-red-400';
@@ -40,14 +41,7 @@ const ScanBlueprint: React.FC = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-4 text-text-muted">
-          <div className="w-10 h-10 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Generating your personalised blueprint…</span>
-        </div>
-      </div>
-    );
+    return <SplashScreen isLoader message="Generating your personalised blueprint…" />;
   }
 
   if (error || !blueprint) {

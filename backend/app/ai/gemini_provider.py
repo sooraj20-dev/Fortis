@@ -1,5 +1,6 @@
 """Gemini API provider for the context-aware Fortis Coach."""
 import asyncio
+import json
 import logging
 from typing import Dict, List, Optional
 
@@ -7,13 +8,14 @@ from app.ai.provider import AIProvider, AIProviderError, AIResponse
 from app.config import settings, get_gemini_api_key
 
 logger = logging.getLogger(__name__)
+FALLBACK_RESPONSE = "Coach unavailable, using fallback."
 
 class GeminiProvider(AIProvider):
     async def complete(
         self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict]] = None,
-        max_tokens: int = 1024,
+        max_tokens: int = 256,
     ) -> AIResponse:
         del tools  # The Coach currently uses grounded text responses, not function tools.
         system_parts = []
@@ -29,12 +31,21 @@ class GeminiProvider(AIProvider):
                     "parts": [{"text": content}],
                 })
 
-        # Ensure we have at least one user content item
-        if not contents:
+        # Gemini requires a user turn at the end of each GenerateContent request.
+        if not contents or contents[-1]["role"] != "user":
             contents.append({
                 "role": "user",
-                "parts": [{"text": "Hello coach"}]
+                "parts": [{"text": "Please respond to the user's latest question."}],
             })
+
+        # Gemini expects turns to alternate; combine adjacent messages by role.
+        normalized_contents = []
+        for item in contents:
+            if normalized_contents and normalized_contents[-1]["role"] == item["role"]:
+                normalized_contents[-1]["parts"][0]["text"] += "\n\n" + item["parts"][0]["text"]
+            else:
+                normalized_contents.append(item)
+        contents = normalized_contents
 
         api_key = get_gemini_api_key()
         if not api_key:
@@ -54,25 +65,38 @@ class GeminiProvider(AIProvider):
                     contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction="\n\n".join(system_parts) if system_parts else None,
-                        temperature=0.6,
-                        max_output_tokens=max_tokens,
+                        max_output_tokens=min(max_tokens, 256),
+                        response_mime_type="application/json",
+                        thinking_config=types.ThinkingConfig(thinking_level="low"),
                     ),
                 )
                 if response.text and response.text.strip():
-                    return AIResponse(content=response.text.strip())
-                raise AIProviderError("Gemini Coach returned an empty response. Please retry.")
+                    try:
+                        envelope = json.loads(response.text)
+                        candidate = envelope["candidates"][0]
+                        output = candidate["output"]
+                        finish_reason = candidate.get("finish_reason", "stop")
+                        if isinstance(output, str) and output.strip() and finish_reason == "stop":
+                            return AIResponse(content=output.strip(), finish_reason="stop")
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                        pass
+                logger.warning("Gemini Coach returned an empty or invalid JSON envelope")
+                return AIResponse(content=FALLBACK_RESPONSE, finish_reason="error")
             except AIProviderError:
                 raise
             except Exception as exc:
                 status = getattr(exc, "code", None)
-                logger.warning("Gemini Coach attempt %d failed: type=%s status=%s", attempt + 1, type(exc).__name__, status)
+                logger.warning(
+                    "Gemini Coach attempt %d failed: type=%s status=%s detail=%s",
+                    attempt + 1, type(exc).__name__, status, str(exc)[:1000],
+                )
                 last_error = exc
                 if (isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or status in (408, 429, 500, 502, 503, 504)) and attempt == 0:
                     await asyncio.sleep(0.5)
                     continue
                 break
 
-        # If all candidates fail, raise clean user-facing error
+        # Return the required JSON-envelope fallback after retries are exhausted.
         status = getattr(last_error, "code", None) if last_error else None
         if status == 400:
             detail = "Gemini rejected the Coach request. Check the configured model and request data."
@@ -84,4 +108,5 @@ class GeminiProvider(AIProvider):
             detail = "Gemini service is temporarily experiencing high demand. Please try again in a few moments."
         else:
             detail = "Gemini Coach request failed. Check backend network access and the Gemini API configuration."
-        raise AIProviderError(detail) from last_error
+        logger.error("Gemini Coach unavailable after retries: %s", detail)
+        return AIResponse(content=FALLBACK_RESPONSE, finish_reason="error")

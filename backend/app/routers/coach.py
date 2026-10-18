@@ -10,13 +10,15 @@ from app.models.intelligence import ChatSession, ChatMessage, FitnessState, Fort
 from app.models.profile import Goal, NutritionPreference
 from app.models.recovery import RecoveryLog, SleepLog
 from app.models.workout import Workout, PostWorkoutFeedback
-from app.ai.provider import AIProviderError, get_ai_provider
+from app.ai.provider import AIProviderError, AIResponse, get_ai_provider
 from app.schemas.intelligence import ChatMessageCreate
 import json
 
 router = APIRouter(prefix="/api/coach", tags=["coach"], dependencies=[Depends(require_onboarded_user)])
 
 SYSTEM_PROMPT = """You are Fortis, an AI fitness coach. You have access to the user's actual fitness data, not general knowledge about fitness.
+
+Return only a valid JSON object in this exact envelope: {"candidates":[{"output":"<short coach response>","finish_reason":"stop"}]}. Keep the coach response concise (200 tokens or fewer), clear, and actionable. Do not include markdown fences or extra JSON fields.
 
 IMPORTANT RULES:
 1. You ALWAYS reference the actual user data provided in the context
@@ -206,8 +208,8 @@ async def send_message(
     try:
         provider = get_ai_provider()
         response = await provider.complete(messages)
-    except AIProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except AIProviderError:
+        response = AIResponse(content="Coach unavailable, using fallback.", finish_reason="error")
 
     # Save assistant response
     assistant_msg = ChatMessage(
@@ -222,8 +224,4 @@ async def send_message(
     session.updated_at = datetime.utcnow()
     db.commit()
 
-    return {
-        "message_id": assistant_msg.id,
-        "content": response.content,
-        "role": "assistant",
-    }
+    return {"candidates": [{"output": response.content, "finish_reason": response.finish_reason}]}

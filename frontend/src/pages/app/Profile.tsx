@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { getProfile, updateProfile, uploadAvatar } from '../../services/profileApi';
 import type { FullProfile, ProfileUpdateRequest } from '../../types';
+import SplashScreen from '../../components/SplashScreen';
 
 // ─── Public-folder & preset avatar images ─────────────────────
 const PUBLIC_IMAGES = [
@@ -363,12 +364,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   if (loading) {
-    return (
-      <div className="max-w-3xl mx-auto p-12 text-center">
-        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-sm text-text-muted">Loading your profile...</p>
-      </div>
-    );
+    return <SplashScreen isLoader message="Loading your profile…" />;
   }
   if (error) {
     return (

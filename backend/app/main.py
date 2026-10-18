@@ -11,7 +11,6 @@ import logging
 
 from app.database import engine, Base, SessionLocal
 from app.config import settings
-from app.config import get_gemini_api_key
 
 # Import all models to ensure they're registered with Base
 from app.models import user, profile, workout, nutrition, recovery, intelligence, scan  # noqa
@@ -140,7 +139,12 @@ def health_check():
         "database_status": db_status,
         "ai_provider": settings.AI_PROVIDER,
         "ai_model": settings.GEMINI_MODEL if settings.AI_PROVIDER.lower() == "gemini" else settings.AI_MODEL,
-        "ai_configured": bool(get_gemini_api_key()) if settings.AI_PROVIDER.lower() == "gemini" else bool(settings.AI_API_KEY.strip()),
+        "ai_configured": bool(
+            (settings.GEMINI_API_KEY.strip() or settings.AI_API_KEY.strip())
+            if settings.AI_PROVIDER.lower() == "gemini"
+            else settings.AI_API_KEY.strip() if settings.AI_PROVIDER.lower() == "openai"
+            else False
+        ),
     }
 
 

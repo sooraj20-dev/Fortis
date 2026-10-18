@@ -253,7 +253,7 @@ export const CoachPage: React.FC = () => {
       const res = await api.post(`/api/coach/sessions/${sid}/message`, { content: text });
       setMessages((prev) => [
         ...prev,
-        { uid: nextUid(), role: 'assistant', content: res.data.content, animate: true },
+        { uid: nextUid(), role: 'assistant', content: res.data.candidates?.[0]?.output ?? 'Coach unavailable, using fallback.', animate: true },
       ]);
     } catch (err: any) {
       const errMsg =

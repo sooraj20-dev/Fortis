@@ -5,6 +5,7 @@ import {
   Zap, Clock, Layers, RotateCcw,
 } from 'lucide-react';
 import api, { getCached } from '../../services/api';
+import SplashScreen from '../../components/SplashScreen';
 
 // ─── Types ────────────────────────────────────────────────────
 type Phase = 'overview' | 'exercise' | 'rest' | 'feedback' | 'complete';
@@ -386,12 +387,7 @@ export const WorkoutPage: React.FC = () => {
 
   // ── Loading / error ──
   if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto p-12 text-center">
-        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-sm text-text-muted">Loading your personalised session...</p>
-      </div>
-    );
+    return <SplashScreen isLoader message="Loading your personalised session…" />;
   }
   if (loadError) {
     return (

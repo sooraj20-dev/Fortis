@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { getLatestScan, getScanById } from '../../../services/scanApi';
 import type { ScanResult as ScanResultType, ScanObservation } from '../../../types/scan';
+import SplashScreen from '../../../components/SplashScreen';
 
 /* ─── Radar / Spider Chart (pure SVG) ────────────────── */
 interface RadarProps {
@@ -152,14 +153,7 @@ const ScanResult: React.FC = () => {
   }, [scanId]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-3 text-text-muted">
-          <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Loading your results…</span>
-        </div>
-      </div>
-    );
+    return <SplashScreen isLoader message="Loading your scan results…" />;
   }
 
   if (error || !scan) {

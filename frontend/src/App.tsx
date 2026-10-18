@@ -26,14 +26,7 @@ const ScanHistory    = lazy(() => import('./pages/app/scan/ScanHistory'));
 const ScanComparison = lazy(() => import('./pages/app/scan/ScanComparison'));
 
 // â”€â”€ Page transition loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const PageLoader = () => (
-  <div className="flex items-center justify-center min-h-[60vh]">
-    <div className="flex flex-col items-center gap-3 text-text-muted">
-      <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-      <span className="text-sm font-medium">Loading...</span>
-    </div>
-  </div>
-);
+const PageLoader = () => <SplashScreen isLoader message="Loading your Fortis workspace…" />;
 
 /** Wrap authenticated routes â€” redirect to /landing if not logged in */
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {

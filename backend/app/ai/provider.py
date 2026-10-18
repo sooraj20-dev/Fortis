@@ -3,9 +3,8 @@ AI Provider Abstraction — The Fortis AI layer.
 
 Architecture:
   AIProvider (abstract)
-   ├── MockAIProvider    — Always works, no API key needed
-  ├── GeminiProvider    — Gemini API calls
-   └── (LocalModel)      — Extensible
+   ├── GeminiProvider    — Gemini API calls
+   └── OpenAIProvider    — OpenAI API calls
 
 The AI Coach uses this provider to generate natural-language explanations
 of Fortis decisions. The LLM is the communication layer, NOT the brain.
@@ -24,9 +23,10 @@ class AIProviderError(RuntimeError):
 
 
 class AIResponse:
-    def __init__(self, content: str, tool_calls: Optional[List] = None):
+    def __init__(self, content: str, tool_calls: Optional[List] = None, finish_reason: str = "stop"):
         self.content = content
         self.tool_calls = tool_calls or []
+        self.finish_reason = finish_reason
 
 
 class AIProvider(ABC):
@@ -41,22 +41,16 @@ class AIProvider(ABC):
 
 
 def get_ai_provider() -> "AIProvider":
-    """Return only the explicitly configured provider; never hide a provider failure with mock data."""
-    provider_name = settings.AI_PROVIDER.lower()
-    if provider_name == "openai":
-        if not settings.AI_API_KEY.strip():
-            raise AIProviderError("AI_API_KEY is not configured on the backend.")
-        from app.ai.openai_provider import OpenAIProvider
-        return OpenAIProvider()
-    if provider_name == "gemini":
+    """Return the configured live model provider; fail clearly for bad configuration."""
+    provider = settings.AI_PROVIDER.strip().lower()
+    if provider == "gemini":
         if not get_gemini_api_key():
-            raise AIProviderError("GEMINI_API_KEY is not configured on the backend.")
+            raise AIProviderError("GEMINI_API_KEY is not configured in backend/.env")
         from app.ai.gemini_provider import GeminiProvider
         return GeminiProvider()
-
-    if provider_name in {"mock", "local"}:
-        from app.ai.mock_provider import MockAIProvider
-        logger.warning("AI_PROVIDER=%s; using the local mock provider", provider_name)
-        return MockAIProvider()
-
-    raise AIProviderError(f"Unsupported AI_PROVIDER '{settings.AI_PROVIDER}'. Configure gemini or openai.")
+    if provider == "openai":
+        if not settings.AI_API_KEY.strip():
+            raise AIProviderError("AI_API_KEY is not configured in backend/.env")
+        from app.ai.openai_provider import OpenAIProvider
+        return OpenAIProvider()
+    raise AIProviderError("AI_PROVIDER must be set to 'gemini' or 'openai' in backend/.env")

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { getScanHistory, getScanComparison } from '../../../services/scanApi';
 import type { ScanComparison as ScanComparisonType } from '../../../types/scan';
+import SplashScreen from '../../../components/SplashScreen';
 
 const DeltaCard: React.FC<{ label: string; delta: number }> = ({ label, delta }) => {
   const pos  = delta > 0.4;
@@ -62,11 +63,7 @@ const ScanComparison: React.FC = () => {
   }, [needsMore]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <SplashScreen isLoader message="Loading your scan comparison…" />;
   }
 
   if (needsMore) {

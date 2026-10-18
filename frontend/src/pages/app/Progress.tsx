@@ -8,6 +8,7 @@ import {
   Info
 } from 'lucide-react';
 import { getCached } from '../../services/api';
+import SplashScreen from '../../components/SplashScreen';
 
 export const ProgressPage: React.FC = () => {
   const [data, setData] = useState<any>(null);
@@ -27,6 +28,10 @@ export const ProgressPage: React.FC = () => {
   };
 
   useEffect(loadProgress, []);
+
+  if (loading && !data && !loadError) {
+    return <SplashScreen isLoader message="Loading your progress…" />;
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

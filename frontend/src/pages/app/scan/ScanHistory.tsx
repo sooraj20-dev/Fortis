@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Clock, ScanLine, AlertTriangle, ArrowRight, ChevronRight } from 'lucide-react';
 import { getScanHistory } from '../../../services/scanApi';
 import type { ScanListItem } from '../../../types/scan';
+import SplashScreen from '../../../components/SplashScreen';
 
 const qualityBar = (score: number) => {
   if (score >= 75) return { color: '#10b981', label: 'STRONG' };
@@ -25,11 +26,7 @@ const ScanHistory: React.FC = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <SplashScreen isLoader message="Loading your scan history…" />;
   }
 
   return (
