@@ -5,17 +5,18 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useNavigate } from 'react-router-dom';
-import { getProfile, updateProfile } from '../../services/profileApi';
+import { getProfile, updateProfile, uploadAvatar } from '../../services/profileApi';
 import type { FullProfile, ProfileUpdateRequest } from '../../types';
 
-// ─── Public-folder images ─────────────────────────────────────
-// List any images from /public here. Files that fail to load are skipped automatically,
-// so it is safe to add names you are unsure about.
+// ─── Public-folder & preset avatar images ─────────────────────
 const PUBLIC_IMAGES = [
   '/landing_imgs/coach.png',
-  // '/landing_imgs/hero.png',
-  // '/landing_imgs/workout.png',
-  // '/landing_imgs/food.png',
+  '/landing_imgs/hero.png',
+  '/landing_imgs/hero_pose.png',
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80',
+  'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=400&q=80',
+  'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80',
 ];
 
 function useLoadableImages(list: string[]) {
@@ -259,9 +260,10 @@ export const ProfilePage: React.FC = () => {
   const [tab, setTab] = useState<TabId>('body');
   const [toast, setToast] = useState<string | null>(null);
 
+  const updateUser = useAuthStore((s) => s.updateUser);
   const avatarKey = `fortis_avatar_${user?.email || 'me'}`;
   const bannerKey = `fortis_banner_${user?.email || 'me'}`;
-  const [avatar, setAvatar] = useState<string | null>(() => store.get(avatarKey));
+  const [avatar, setAvatar] = useState<string | null>(() => user?.avatar_url || store.get(avatarKey));
   const [banner, setBanner] = useState<string | null>(() => store.get(bannerKey));
   const [customize, setCustomize] = useState(false);
   const [photoErr, setPhotoErr] = useState<string | null>(null);
@@ -270,8 +272,26 @@ export const ProfilePage: React.FC = () => {
   const images = useLoadableImages(useMemo(() => PUBLIC_IMAGES, []));
 
   useEffect(() => {
-    getProfile().then(setProfile).catch(() => setError('Could not load profile. Please try again.')).finally(() => setLoading(false));
-  }, []);
+    getProfile()
+      .then((res) => {
+        setProfile(res);
+        const serverAvatar = res.avatar_url || res.profile?.avatar_url;
+        if (serverAvatar) {
+          setAvatar(serverAvatar);
+          store.set(avatarKey, serverAvatar);
+          updateUser({ avatar_url: serverAvatar });
+        } else {
+          const local = store.get(avatarKey);
+          if (local) {
+            setAvatar(local);
+            updateUser({ avatar_url: local });
+          }
+        }
+      })
+      .catch(() => setError('Could not load profile. Please try again.'))
+      .finally(() => setLoading(false));
+  }, [avatarKey, updateUser]);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2200);
@@ -286,19 +306,61 @@ export const ProfilePage: React.FC = () => {
   };
   const field = (key: string) => (v: any) => save({ [key]: v });
 
+  const updateAvatarImage = async (urlOrData: string | null) => {
+    setAvatar(urlOrData);
+    store.set(avatarKey, urlOrData);
+    updateUser({ avatar_url: urlOrData || undefined });
+    try {
+      await updateProfile({ avatar_url: urlOrData || '' });
+    } catch (e) {
+      console.warn('Backend avatar update notice:', e);
+    }
+  };
+
   const onPhoto = async (f?: File | null) => {
     if (!f) return;
     setPhotoErr(null);
-    if (!f.type.startsWith('image/')) { setPhotoErr('Choose an image file.'); return; }
+    if (!f.type.startsWith('image/')) {
+      setPhotoErr('Choose an image file.');
+      return;
+    }
     try {
+      // 1. Try uploading to backend file storage first
+      try {
+        const res = await uploadAvatar(f);
+        if (res.avatar_url) {
+          await updateAvatarImage(res.avatar_url);
+          setToast('Profile image updated');
+          return;
+        }
+      } catch (uploadErr) {
+        console.warn('Upload endpoint notice, storing resized image:', uploadErr);
+      }
+
+      // 2. Resized square base64 fallback
       const data = await resizeToSquare(f);
-      setAvatar(data); store.set(avatarKey, data); setToast('Photo updated');
-      // TODO: also upload to your backend (e.g. POST /api/profile/avatar) so it follows the user across devices.
-    } catch { setPhotoErr('That image could not be read. Try another.'); }
+      await updateAvatarImage(data);
+      setToast('Profile image updated');
+    } catch {
+      setPhotoErr('That image could not be read. Try another.');
+    }
   };
-  const setAvatarFromPublic = (src: string) => { setAvatar(src); store.set(avatarKey, src); setToast('Photo updated'); };
-  const setBannerFrom = (src: string | null) => { setBanner(src); store.set(bannerKey, src); setToast(src ? 'Cover updated' : 'Cover removed'); };
-  const removeAvatar = () => { setAvatar(null); store.set(avatarKey, null); setToast('Photo removed'); };
+
+  const setAvatarFromPublic = async (src: string) => {
+    await updateAvatarImage(src);
+    setToast('Profile image updated');
+  };
+
+  const setBannerFrom = (src: string | null) => {
+    setBanner(src);
+    store.set(bannerKey, src);
+    setToast(src ? 'Cover updated' : 'Cover removed');
+  };
+
+  const removeAvatar = async () => {
+    await updateAvatarImage(null);
+    setToast('Profile image removed');
+  };
 
   if (loading) {
     return (
@@ -415,7 +477,7 @@ export const ProfilePage: React.FC = () => {
                   </div>
                 </>
               )}
-              <p className="text-[11px] text-text-muted">Photos are saved on this device for now.</p>
+              <p className="text-[11px] text-text-muted">Your custom profile photo will appear across your dashboard, navigation, and workouts.</p>
             </div>
           </div>
         </div>

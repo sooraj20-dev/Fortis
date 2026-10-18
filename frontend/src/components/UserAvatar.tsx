@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuthStore } from '../stores/authStore';
 
 interface UserAvatarProps {
   className?: string;
+  /** Custom image URL. If not provided, defaults to authStore.user?.avatar_url. */
+  src?: string;
   /** Gradient ring around the avatar. */
   ring?: boolean;
   /** Small presence dot in the corner. */
@@ -27,12 +30,26 @@ const initialsOf = (name?: string) =>
     .join('');
 
 /**
- * Round user avatar. With only `className` it looks like before: a brand-coloured circle
- * with the profile icon. Size it from outside, e.g. className="w-9 h-9".
+ * Round user avatar. If the user has a custom avatar_url set, it displays that image.
+ * Otherwise, falls back to /profile-icon.png or initials.
  */
-const UserAvatar: React.FC<UserAvatarProps> = ({ className = '', ring = false, status, name, interactive = false }) => {
+const UserAvatar: React.FC<UserAvatarProps> = ({
+  className = '',
+  src: propSrc,
+  ring = false,
+  status,
+  name: propName,
+  interactive = false,
+}) => {
   const [failed, setFailed] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const name = propName || user?.name || '';
   const initials = initialsOf(name);
+  const avatarSrc = propSrc !== undefined ? propSrc : user?.avatar_url;
+
+  useEffect(() => {
+    setFailed(false);
+  }, [avatarSrc]);
 
   return (
     <span
@@ -45,7 +62,15 @@ const UserAvatar: React.FC<UserAvatarProps> = ({ className = '', ring = false, s
       ].join(' ')}
     >
       <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-brand-light">
-        {failed && initials ? (
+        {avatarSrc && !failed ? (
+          <img
+            src={avatarSrc}
+            alt={name || 'Profile'}
+            draggable={false}
+            onError={() => setFailed(true)}
+            className="h-full w-full object-cover"
+          />
+        ) : failed && initials ? (
           <span className="font-black text-white leading-none select-none" style={{ fontSize: '0.42em' }}>
             {initials}
           </span>

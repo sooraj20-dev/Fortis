@@ -73,6 +73,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
     is_complete = _is_onboarding_complete(user, db)
+    profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     token = create_access_token(user.id)
     return TokenResponse(
         access_token=token,
@@ -81,6 +82,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         email=user.email,
         is_admin=user.is_admin,
         onboarding_complete=is_complete,
+        avatar_url=getattr(profile, "avatar_url", None) if profile else None,
     )
 
 
@@ -88,10 +90,12 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return authenticated user profile and onboarding status."""
     is_complete = _is_onboarding_complete(current_user, db)
+    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
     return {
         "user_id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
         "is_admin": current_user.is_admin,
+        "avatar_url": getattr(profile, "avatar_url", None) if profile else None,
         "onboarding_complete": is_complete,
     }

@@ -31,3 +31,15 @@ export async function updateProfile(data: ProfileUpdateRequest): Promise<FullPro
   const res = await api.patch<FullProfile>('/api/profile', data);
   return res.data;
 }
+
+/**
+ * Upload an avatar image file to the backend.
+ */
+export async function uploadAvatar(file: File): Promise<{ avatar_url: string; message: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await api.post<{ avatar_url: string; message: string }>('/api/profile/upload-avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+}

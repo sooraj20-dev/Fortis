@@ -4,6 +4,7 @@ export interface User {
   email: string;
   name: string;
   is_admin: boolean;
+  avatar_url?: string;
 }
 
 export interface TokenResponse {
@@ -14,6 +15,7 @@ export interface TokenResponse {
   email: string;
   is_admin: boolean;
   onboarding_complete: boolean;
+  avatar_url?: string;
 }
 
 // ─── Profile types ────────────────────────────────────────────
@@ -30,6 +32,7 @@ export interface Profile {
   exercises_to_avoid?: string[];
   preferred_exercise_types?: string[];
   strength_benchmarks?: Record<string, any>;
+  avatar_url?: string;
   created_at?: string;
 }
 
@@ -120,6 +123,7 @@ export interface ProfileUpdateRequest {
   meals_per_day?: number;
   cooking_access?: string;
   cooking_available?: boolean;
+  avatar_url?: string;
 }
 
 export interface FullProfile {
@@ -130,6 +134,7 @@ export interface FullProfile {
   nutrition_pref?: NutritionPref;
   name: string;
   email: string;
+  avatar_url?: string;
   onboarding_complete: boolean;
 }
 

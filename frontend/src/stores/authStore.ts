@@ -10,6 +10,7 @@ interface AuthState {
   login: (token: string, user: User, onboardingComplete: boolean) => void;
   logout: () => void;
   setOnboardingComplete: (complete?: boolean) => void;
+  updateUser: (patch: Partial<User>) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -27,6 +28,11 @@ export const useAuthStore = create<AuthState>()(
         set({ token: null, user: null, onboardingComplete: false, isAuthenticated: false }),
 
       setOnboardingComplete: (complete = true) => set({ onboardingComplete: complete }),
+
+      updateUser: (patch) =>
+        set((state) => ({
+          user: state.user ? { ...state.user, ...patch } : null,
+        })),
     }),
     {
       name: 'fortis-auth',

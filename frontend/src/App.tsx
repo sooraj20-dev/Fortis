@@ -61,10 +61,13 @@ function App() {
   // Sync latest persisted onboarding status on mount
   useEffect(() => {
     if (useAuthStore.getState().isAuthenticated) {
-      getCached<{ onboarding_complete?: boolean }>('/api/auth/me')
+      getCached<{ onboarding_complete?: boolean; avatar_url?: string }>('/api/auth/me')
         .then((res) => {
           if (res.data?.onboarding_complete !== undefined) {
             useAuthStore.getState().setOnboardingComplete(res.data.onboarding_complete);
+          }
+          if (res.data?.avatar_url) {
+            useAuthStore.getState().updateUser({ avatar_url: res.data.avatar_url });
           }
         })
         .catch(() => {});
