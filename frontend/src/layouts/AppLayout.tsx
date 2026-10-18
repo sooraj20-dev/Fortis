@@ -10,6 +10,7 @@ import {
   MessageSquareQuote,
   ScanLine,
   LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import BrandLogo from '../components/BrandLogo';
@@ -25,6 +26,7 @@ const navItems = [
   { name: 'Progress', path: '/progress', icon: TrendingUp },
   { name: 'Vision', path: '/vision', icon: Video },
   { name: 'AI Coach', path: '/coach', icon: MessageSquareQuote },
+  { name: 'Profile', path: '/profile', icon: UserIcon },
 ];
 
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -81,16 +83,20 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
         {/* User card + logout */}
         <div className="mt-4 p-3.5 bg-dark-card border border-dark-border rounded-2xl">
-          <div className="flex items-center gap-2.5 mb-3">
-            <UserAvatar className="w-9 h-9 shadow-glow" />
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-text-primary truncate">{user?.name || 'User'}</div>
+          <button
+            onClick={() => navigate('/profile')}
+            className="flex items-center gap-2.5 mb-3 w-full text-left p-1 rounded-xl hover:bg-dark-hover transition-colors group cursor-pointer"
+            title="View Profile"
+          >
+            <UserAvatar className="w-9 h-9 shadow-glow group-hover:ring-2 group-hover:ring-brand transition-all" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-text-primary group-hover:text-brand-light transition-colors truncate">{user?.name || 'User'}</div>
               <div className="text-[10px] text-text-muted truncate">{user?.email || ''}</div>
             </div>
-          </div>
+          </button>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 text-xs text-text-muted hover:text-danger transition-colors py-1.5 px-2 rounded-lg hover:bg-danger/10"
+            className="w-full flex items-center gap-2 text-xs text-text-muted hover:text-danger transition-colors py-1.5 px-2 rounded-lg hover:bg-danger/10 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
             Sign Out
@@ -108,15 +114,19 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-bold text-text-primary">{user?.name || 'User'}</div>
-              <div className="text-[10px] text-text-muted">{user?.email || ''}</div>
-            </div>
             <button
-              onClick={handleLogout}
-              title="Sign out"
-              aria-label="Sign out"
-              className="rounded-full hover:ring-2 hover:ring-brand transition-all"
+              onClick={() => navigate('/profile')}
+              className="text-right hidden sm:block group hover:opacity-90 transition-opacity cursor-pointer"
+              title="View Profile"
+            >
+              <div className="text-xs font-bold text-text-primary group-hover:text-brand-light transition-colors">{user?.name || 'User'}</div>
+              <div className="text-[10px] text-text-muted">{user?.email || ''}</div>
+            </button>
+            <button
+              onClick={() => navigate('/profile')}
+              title="View Profile"
+              aria-label="View Profile"
+              className="rounded-full hover:ring-2 hover:ring-brand transition-all cursor-pointer"
             >
               <UserAvatar className="w-9 h-9 shadow-glow" />
             </button>

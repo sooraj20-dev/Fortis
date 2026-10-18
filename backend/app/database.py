@@ -63,20 +63,23 @@ def _get_collection_name(model: Any) -> str:
 def _get_next_id(db, collection_name: str) -> int:
     """Atomic auto-incrementing integer sequence for MongoDB documents."""
     try:
-        # Guarantee counter is synchronized with any existing documents
-        highest = db[collection_name].find_one(sort=[("id", -1)])
-        max_existing_id = (highest["id"]) if highest and "id" in highest else 0
-
-        counter = db["_counters"].find_one({"_id": collection_name})
-        curr_seq = counter["seq"] if counter and "seq" in counter else 0
-
-        target_seq = max(curr_seq, max_existing_id) + 1
-        db["_counters"].update_one(
+        res = db["_counters"].find_one_and_update(
             {"_id": collection_name},
-            {"$set": {"seq": target_seq}},
-            upsert=True
+            {"$inc": {"seq": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
         )
-        return target_seq
+        if res and res.get("seq") == 1:
+            highest = db[collection_name].find_one(sort=[("id", -1)])
+            max_existing_id = (highest["id"]) if highest and "id" in highest else 0
+            if max_existing_id >= 1:
+                target_seq = max_existing_id + 1
+                db["_counters"].update_one(
+                    {"_id": collection_name},
+                    {"$set": {"seq": target_seq}}
+                )
+                return target_seq
+        return res["seq"] if res and "seq" in res else 1
     except Exception as e:
         logger.warning(f"Error fetching next sequence from Atlas: {e}. Falling back safely.")
         try:
@@ -407,6 +410,7 @@ class MongoSession:
         self._pending_add: List[Any] = []
         self._pending_delete: List[Any] = []
         self._tracked_instances: Dict[int, Any] = {}
+        self._initial_snapshots: Dict[int, Dict[str, Any]] = {}
 
     def get_db(self):
         return self._db
@@ -418,7 +422,10 @@ class MongoSession:
     def track(self, instance: Any) -> None:
         """Register loaded instance for automatic dirty/update persistence on flush/commit."""
         if instance is not None:
-            self._tracked_instances[id(instance)] = instance
+            inst_id = id(instance)
+            self._tracked_instances[inst_id] = instance
+            if inst_id not in self._initial_snapshots:
+                self._initial_snapshots[inst_id] = _model_to_dict(instance)
 
     def add(self, instance: Any) -> None:
         if instance not in self._pending_add:
@@ -435,16 +442,21 @@ class MongoSession:
 
     def flush(self) -> None:
         """Assign IDs and persist pending operations and dirty tracked instances immediately."""
-        # 1. Persist updates to any tracked instances that were modified
+        # 1. Persist updates ONLY to tracked instances that actually changed
         for inst in list(self._tracked_instances.values()):
             if inst not in self._pending_delete and getattr(inst, "id", None) is not None:
-                col_name = _get_collection_name(inst)
-                col = self._db[col_name]
-                doc = _model_to_dict(inst)
-                col.replace_one({"id": inst.id}, doc, upsert=True)
+                curr_doc = _model_to_dict(inst)
+                init_doc = self._initial_snapshots.get(id(inst))
+                if init_doc is None or curr_doc != init_doc:
+                    col_name = _get_collection_name(inst)
+                    col = self._db[col_name]
+                    col.replace_one({"id": inst.id}, curr_doc, upsert=True)
+                    self._initial_snapshots[id(inst)] = curr_doc
 
         # 2. Add new instances
-        for inst in self._pending_add:
+        pending_to_add = list(self._pending_add)
+        self._pending_add.clear()
+        for inst in pending_to_add:
             col_name = _get_collection_name(inst)
             col = self._db[col_name]
             if getattr(inst, "id", None) is None:
@@ -454,17 +466,18 @@ class MongoSession:
             self.track(inst)
 
         # 3. Delete requested instances
-        for inst in self._pending_delete:
+        pending_to_delete = list(self._pending_delete)
+        self._pending_delete.clear()
+        for inst in pending_to_delete:
             col_name = _get_collection_name(inst)
             col = self._db[col_name]
             if getattr(inst, "id", None) is not None:
                 col.delete_one({"id": inst.id})
                 self._tracked_instances.pop(id(inst), None)
+                self._initial_snapshots.pop(id(inst), None)
 
     def commit(self) -> None:
         self.flush()
-        self._pending_add.clear()
-        self._pending_delete.clear()
 
     def rollback(self) -> None:
         self._pending_add.clear()

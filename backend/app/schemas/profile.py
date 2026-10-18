@@ -20,6 +20,7 @@ class ProfileResponse(BaseModel):
     exercises_to_avoid: Optional[List[str]] = None
     preferred_exercise_types: Optional[List[str]] = None
     strength_benchmarks: Optional[Dict[str, Any]] = None
+    avatar_url: Optional[str] = None
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
@@ -71,6 +72,7 @@ class FullProfileResponse(BaseModel):
     nutrition_pref: Optional[NutritionPrefResponse] = None
     name: str
     email: str
+    avatar_url: Optional[str] = None
     onboarding_complete: bool
 
 
@@ -137,6 +139,7 @@ class ProfileUpdateRequest(BaseModel):
     exercises_to_avoid: Optional[List[str]] = None
     preferred_exercise_types: Optional[List[str]] = None
     strength_benchmarks: Optional[Dict[str, Any]] = None
+    avatar_url: Optional[str] = None
 
     # Goal
     primary_goal: Optional[str] = None

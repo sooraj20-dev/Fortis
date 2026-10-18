@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Check,
@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { completeOnboarding } from '../services/profileApi';
 import { useAuthStore } from '../stores/authStore';
@@ -25,7 +26,225 @@ export interface OnboardingProps {
   onClose?: () => void;
 }
 
-const TOTAL_STEPS = 6;
+const COACH_IMG = '/landing_imgs/hero_pose.png';
+
+const STEPS = [
+  { id: 1, title: 'About you', icon: User, tip: "Honest numbers make a better plan. Nobody's grading you." },
+  { id: 2, title: 'Goals & schedule', icon: Target, tip: "Pick what you'll actually do. Consistency beats ambition." },
+  { id: 3, title: 'Nutrition', icon: Utensils, tip: "Food is fuel. Tell me what's on your plate and your budget." },
+  { id: 4, title: 'Lifestyle', icon: Moon, tip: 'Sleep is the cheapest supplement there is.' },
+  { id: 5, title: 'Safety', icon: ShieldCheck, tip: "Tell me what hurts. I'd rather work around it than through it." },
+  { id: 6, title: 'Review', icon: Sparkles, tip: 'Last look. Then we get to work.' },
+];
+const TOTAL_STEPS = STEPS.length;
+
+/* ───────────────────────── UI helpers ───────────────────────── */
+
+const cx = (...c: Array<string | false | undefined | null>) => c.filter(Boolean).join(' ');
+
+const inputCls = 'fortis-input !text-base sm:!text-sm';
+
+const TONES = {
+  brand: { on: 'border-brand bg-brand/15 text-white', check: 'text-brand-light' },
+  emerald: { on: 'border-emerald-500 bg-emerald-500/15 text-emerald-300', check: 'text-emerald-300' },
+  indigo: { on: 'border-indigo-400 bg-indigo-500/15 text-white', check: 'text-indigo-300' },
+};
+const OFF = 'border-dark-border bg-dark-surface text-text-secondary hover:text-white hover:border-white/20';
+
+const Choice: React.FC<{
+  selected: boolean;
+  onClick: () => void;
+  label: string;
+  desc?: string;
+  tone?: keyof typeof TONES;
+  check?: boolean;
+  center?: boolean;
+}> = ({ selected, onClick, label, desc, tone = 'brand', check, center }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={selected}
+    className={cx(
+      'min-h-[46px] w-full px-3 py-2.5 rounded-xl border text-xs font-bold transition-all active:scale-[0.98] flex items-center gap-2',
+      center ? 'justify-center text-center' : 'justify-between text-left',
+      selected ? TONES[tone].on : OFF,
+    )}
+  >
+    <span className="min-w-0">
+      <span className="block leading-snug">{label}</span>
+      {desc && <span className="block text-[10px] font-normal text-text-muted mt-0.5">{desc}</span>}
+    </span>
+    {check && selected && <Check className={cx('w-4 h-4 shrink-0', TONES[tone].check)} />}
+  </button>
+);
+
+const Field: React.FC<{ label: React.ReactNode; hint?: string; htmlFor?: string; children: React.ReactNode }> = ({
+  label,
+  hint,
+  htmlFor,
+  children,
+}) => (
+  <div className="min-w-0">
+    <label className="fortis-label" htmlFor={htmlFor}>
+      {label}
+    </label>
+    {children}
+    {hint && <p className="text-[11px] text-text-muted mt-1.5">{hint}</p>}
+  </div>
+);
+
+const RangeField: React.FC<{
+  label: string;
+  display: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  ticks?: string[];
+  accent?: string;
+  onChange: (v: number) => void;
+}> = ({ label, display, value, min, max, step = 1, ticks, accent = 'accent-brand', onChange }) => (
+  <div>
+    <div className="flex items-baseline justify-between mb-1.5 gap-3">
+      <span className="fortis-label mb-0">{label}</span>
+      <span className="text-white font-black text-lg tabular-nums shrink-0">{display}</span>
+    </div>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={cx('w-full h-7 cursor-pointer', accent)}
+    />
+    {ticks && (
+      <div className="flex justify-between text-[10px] text-text-muted mt-0.5">
+        {ticks.map((t) => (
+          <span key={t}>{t}</span>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
+const TagInput: React.FC<{
+  items: string[];
+  onChange: (items: string[]) => void;
+  placeholder: string;
+}> = ({ items, onChange, placeholder }) => {
+  const [text, setText] = useState('');
+  const add = () => {
+    const v = text.trim();
+    if (!v) return;
+    if (!items.includes(v)) onChange([...items, v]);
+    setText('');
+  };
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={text}
+          enterKeyHint="done"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder={placeholder}
+          className={cx(inputCls, 'flex-1 min-w-0')}
+        />
+        <button type="button" onClick={add} className="fortis-btn-secondary text-xs px-4 shrink-0 min-h-[44px]">
+          Add
+        </button>
+      </div>
+      {items.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-3">
+          {items.map((item) => (
+            <button
+              type="button"
+              key={item}
+              aria-label={`Remove ${item}`}
+              onClick={() => onChange(items.filter((i) => i !== item))}
+              className="fortis-pill inline-flex items-center gap-1.5 min-h-[32px]"
+            >
+              {item}
+              <X className="w-3 h-3" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SectionTitle: React.FC<{ icon: React.ElementType; iconClass: string; title: string; children: React.ReactNode }> = ({
+  icon: Icon,
+  iconClass,
+  title,
+  children,
+}) => (
+  <div className="flex items-start gap-3">
+    <div className="w-10 h-10 rounded-xl bg-dark-surface border border-dark-border flex items-center justify-center shrink-0">
+      <Icon className={cx('w-5 h-5', iconClass)} />
+    </div>
+    <div className="min-w-0">
+      <h2 className="text-xl sm:text-2xl font-black text-white leading-tight">{title}</h2>
+      <p className="text-xs sm:text-sm text-text-secondary mt-1 leading-relaxed">{children}</p>
+    </div>
+  </div>
+);
+
+const ReviewCard: React.FC<{
+  title: string;
+  titleClass: string;
+  onEdit: () => void;
+  rows: Array<[string, React.ReactNode]>;
+  wide?: boolean;
+}> = ({ title, titleClass, onEdit, rows, wide }) => (
+  <section className={cx('rounded-2xl border border-dark-border bg-dark-surface/60 p-4', wide && 'sm:col-span-2')}>
+    <div className="flex items-center justify-between mb-2.5">
+      <h3 className={cx('text-sm font-bold', titleClass)}>{title}</h3>
+      <button
+        type="button"
+        onClick={onEdit}
+        className="text-xs font-semibold text-brand-light px-3 py-1.5 -mr-2 rounded-lg hover:bg-white/5"
+      >
+        Edit
+      </button>
+    </div>
+    <dl className="space-y-1.5 text-xs">
+      {rows.map(([k, v]) => (
+        <div key={k} className="flex justify-between gap-4">
+          <dt className="text-text-muted shrink-0">{k}</dt>
+          <dd className="text-white font-medium text-right min-w-0 break-words">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  </section>
+);
+
+const pretty = (s?: string | null) => (s ? s.replace(/_/g, ' ').toLowerCase() : '');
+
+const CoachTip: React.FC<{ tip: string; className?: string }> = ({ tip, className }) => (
+  <div className={cx('flex items-center gap-3 rounded-2xl border border-brand/20 bg-brand/5 p-3', className)}>
+    <img
+      src={COACH_IMG}
+      alt=""
+      aria-hidden
+      className="w-11 h-11 rounded-full object-cover object-[50%_16%] border border-brand/40 shrink-0"
+    />
+    <p className="text-xs text-text-secondary leading-snug">
+      <span className="text-white font-bold">Coach Fortis: </span>
+      {tip}
+    </p>
+  </div>
+);
+
+/* ───────────────────────── Page ───────────────────────── */
 
 export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onClose }) => {
   const navigate = useNavigate();
@@ -43,6 +262,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
   const [currentStep, setCurrentStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const topRef = useRef<HTMLDivElement>(null);
 
   // Form State
   const [formData, setFormData] = useState<OnboardingData>({
@@ -84,9 +304,10 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
     strength_benchmarks: {},
   });
 
-  // Custom text input for exercises to avoid tag creation
-  const [avoidInput, setAvoidInput] = useState('');
-  const [allergyInput, setAllergyInput] = useState('');
+  const set = (patch: Partial<OnboardingData>) => setFormData((prev) => ({ ...prev, ...patch }));
+
+  // Scroll to the top of the wizard (works for both the page and the scrolling modal)
+  const scrollTop = () => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Navigation handlers
   const handleNext = () => {
@@ -94,7 +315,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
     if (!validateCurrentStep()) return;
     if (currentStep < TOTAL_STEPS) {
       setCurrentStep((prev) => prev + 1);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollTop();
     }
   };
 
@@ -102,7 +323,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
     setError(null);
     if (currentStep > 1) {
       setCurrentStep((prev) => prev - 1);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollTop();
     }
   };
 
@@ -110,8 +331,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
     setError(null);
     if (currentStep < TOTAL_STEPS) {
       setCurrentStep((prev) => prev + 1);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollTop();
     }
+  };
+
+  const goToStep = (n: number) => {
+    setError(null);
+    setCurrentStep(n);
+    scrollTop();
   };
 
   // Validation
@@ -193,990 +420,806 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
     }
   };
 
+  const step = STEPS[currentStep - 1];
+  const showSidebar = !isModal;
+  const benchmarksText =
+    Object.entries(formData.strength_benchmarks || {})
+      .filter(([, value]) => value !== undefined && value !== '')
+      .map(([lift, value]) => `${lift.replace('_kg', '').replace('_', ' ')} ${value} kg`)
+      .join(' · ') || 'Not provided';
+
   return (
-    <div className={isModal ? "p-2 sm:p-4 text-text-primary" : "min-h-dvh bg-dark-bg text-text-primary flex flex-col justify-between py-6 px-4 sm:px-6 relative overflow-hidden"}>
-      {/* Background Ambience */}
+    <div
+      className={cx(
+        'relative text-text-primary',
+        isModal ? 'px-3 sm:px-6 pt-3 sm:pt-5' : 'min-h-dvh bg-dark-bg flex flex-col',
+      )}
+    >
+      <style>{`
+        @keyframes ob-step-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+        .ob-step { animation: ob-step-in .28s ease both; }
+        @media (prefers-reduced-motion: reduce) { .ob-step { animation: none; } }
+      `}</style>
+
+      {/* Background ambience (page only). Its own overflow box keeps sticky actions working. */}
       {!isModal && (
-        <>
-          <div className="absolute inset-0 bg-radial-orange pointer-events-none" />
-          <div
-            className="absolute top-0 right-0 font-black text-brand pointer-events-none select-none"
-            style={{ fontSize: 'clamp(5rem, 15vw, 12rem)', opacity: 0.03, lineHeight: 1 }}
-          >
-            FORTIS
-          </div>
-        </>
+        <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+          <div className="absolute inset-0 bg-radial-orange" />
+          <img
+            src="/landing_imgs/footer.png"
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover object-[72%_50%] opacity-[0.12]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-dark-bg/60 via-dark-bg/80 to-dark-bg" />
+        </div>
       )}
 
-      {/* Header Container */}
-      <div className="max-w-2xl mx-auto w-full relative z-10">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <BrandLogo className="h-12 w-auto" />
-            <div>
-              <span className="text-[9px] text-brand-light font-bold tracking-[0.16em] uppercase">
-                Personalized Onboarding
-              </span>
-            </div>
+      <div
+        className={cx(
+          'relative z-10 w-full mx-auto flex-1 flex flex-col',
+          isModal ? 'max-w-3xl' : 'max-w-6xl px-4 sm:px-6 pt-4 sm:pt-8',
+        )}
+      >
+        {/* ── Header ── */}
+        <header className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+          <div className="flex items-center gap-3 min-w-0">
+            <BrandLogo className="h-9 sm:h-12 w-auto shrink-0" />
+            <span className="hidden min-[380px]:block text-xs text-text-muted truncate">Personalised setup</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="fortis-pill">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="fortis-pill whitespace-nowrap">
               Step {currentStep} of {TOTAL_STEPS}
             </span>
             {isModal && onClose && (
               <button
                 type="button"
                 onClick={onClose}
-                className="w-8 h-8 rounded-xl bg-dark-surface border border-dark-border text-text-muted hover:text-white flex items-center justify-center text-base font-bold transition-colors ml-1"
-                title="Close"
+                aria-label="Close setup"
+                className="w-10 h-10 rounded-xl bg-dark-surface border border-dark-border text-text-muted hover:text-white flex items-center justify-center transition-colors"
               >
-                &times;
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
-        </div>
+        </header>
 
-        {/* Progress Bar */}
-        <div className="w-full bg-dark-surface h-2 rounded-full overflow-hidden border border-dark-border mb-6">
-          <div
-            className="bg-brand h-full rounded-full transition-all duration-300"
-            style={{ width: `${(currentStep / TOTAL_STEPS) * 100}%` }}
-          />
-        </div>
-      </div>
+        <div className={cx(showSidebar && 'lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10 lg:items-start')}>
+          {/* ── Desktop sidebar: stepper + coach ── */}
+          {showSidebar && (
+            <aside className="hidden lg:flex flex-col gap-5 sticky top-8">
+              <ol className="space-y-1.5">
+                {STEPS.map((s) => {
+                  const done = s.id < currentStep;
+                  const active = s.id === currentStep;
+                  const Icon = s.icon;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        disabled={!done}
+                        onClick={() => goToStep(s.id)}
+                        aria-current={active ? 'step' : undefined}
+                        className={cx(
+                          'w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
+                          active ? 'bg-brand/15 border border-brand/40' : 'border border-transparent',
+                          done && 'hover:bg-white/5 cursor-pointer',
+                        )}
+                      >
+                        <span
+                          className={cx(
+                            'w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border',
+                            done && 'bg-brand border-brand text-white',
+                            active && 'border-brand text-brand-light',
+                            !done && !active && 'border-dark-border text-text-muted',
+                          )}
+                        >
+                          {done ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+                        </span>
+                        <span className={cx('text-sm font-semibold', active ? 'text-white' : done ? 'text-text-secondary' : 'text-text-muted')}>
+                          {s.title}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
 
-      {/* Wizard Content Card */}
-      <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col justify-center relative z-10 my-4">
-        <div className="fortis-card rounded-3xl p-6 sm:p-8">
-          {/* Error Banner */}
-          {error && (
-            <div className="mb-6 flex items-start gap-2.5 bg-danger/10 border border-danger/20 rounded-xl p-3.5 text-xs text-danger">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* ───────────────── STEP 1: PERSONAL DETAILS ───────────────── */}
-          {currentStep === 1 && (
-            <div className="space-y-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <User className="w-5 h-5 text-brand-light" />
-                  <h2 className="text-xl sm:text-2xl font-black text-white">Personal Details</h2>
-                </div>
-                <p className="text-xs sm:text-sm text-text-secondary">
-                  Welcome, <span className="text-white font-semibold">{userName}</span>! Tell us a bit about yourself so Fortis can calibrate your body metrics and recommendations.
+              <div className="relative rounded-2xl overflow-hidden border border-brand/25 aspect-[4/5]">
+                <img src={COACH_IMG} alt="Coach Fortis" className="absolute inset-0 w-full h-full object-cover object-[50%_10%]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-dark-bg via-dark-bg/60 to-transparent" />
+                <p className="absolute left-4 right-4 bottom-4 text-sm text-white font-semibold leading-snug">
+                  “{step.tip}”
+                  <span className="block text-xs text-brand-light font-bold mt-1.5">Coach Fortis</span>
                 </p>
               </div>
+            </aside>
+          )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="fortis-label">
-                    Age <span className="text-brand">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={12}
-                    max={120}
-                    value={formData.age || ''}
-                    onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
-                    className="fortis-input"
-                    placeholder="e.g. 25"
-                    required
-                  />
-                </div>
+          {/* ── Main column ── */}
+          <div className="min-w-0 w-full max-w-3xl mx-auto lg:mx-0 flex flex-col flex-1">
+            <div ref={topRef} className="scroll-mt-4" />
 
-                <div>
-                  <label className="fortis-label">Gender (Optional)</label>
-                  <select
-                    value={formData.gender || 'unspecified'}
-                    onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                    className="fortis-input"
+            {/* Progress (hidden when the sidebar already shows it) */}
+            <div className={cx('mb-4', showSidebar && 'lg:hidden')}>
+              <div className="flex gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={TOTAL_STEPS} aria-valuenow={currentStep}>
+                {STEPS.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={s.id >= currentStep}
+                    onClick={() => goToStep(s.id)}
+                    aria-label={`Go to ${s.title}`}
+                    className="flex-1 py-2 group"
                   >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Non-binary / Other</option>
-                    <option value="unspecified">Prefer not to say</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="fortis-label">
-                    Height (cm) <span className="text-brand">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={50}
-                    max={280}
-                    value={formData.height_cm || ''}
-                    onChange={(e) => setFormData({ ...formData, height_cm: parseFloat(e.target.value) || undefined })}
-                    className="fortis-input"
-                    placeholder="e.g. 175"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="fortis-label">
-                    Current Weight (kg) <span className="text-brand">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={20}
-                    max={350}
-                    step="0.1"
-                    value={formData.weight_kg || ''}
-                    onChange={(e) => setFormData({ ...formData, weight_kg: parseFloat(e.target.value) || undefined })}
-                    className="fortis-input"
-                    placeholder="e.g. 70.5"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="regional-preference" className="fortis-label">
-                  Region / Country <span className="text-brand">*</span>
-                </label>
-                <input
-                  id="regional-preference"
-                  type="text"
-                  value={formData.regional_preference || ''}
-                  onChange={(e) => setFormData({ ...formData, regional_preference: e.target.value })}
-                  className="fortis-input"
-                  placeholder="e.g. Kerala, India"
-                  autoComplete="country-name"
-                  required
-                />
-                <p className="text-[10px] text-text-muted mt-1">
-                  Used to tailor local food suggestions and nutrition recommendations.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ───────────────── STEP 2: FITNESS GOALS ───────────────── */}
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Target className="w-5 h-5 text-brand-light" />
-                  <h2 className="text-xl sm:text-2xl font-black text-white">Fitness Goals & Schedule</h2>
-                </div>
-                <p className="text-xs sm:text-sm text-text-secondary">
-                  Choose your focus, training environment, and available commitment.
-                </p>
-              </div>
-
-              {/* Primary Goal */}
-              <div>
-                <label className="fortis-label">Primary Fitness Goal</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { key: 'GENERAL_FITNESS', label: 'General Fitness', desc: 'Health & Balance' },
-                    { key: 'STRENGTH', label: 'Strength', desc: 'Power & Core Lifts' },
-                    { key: 'MUSCLE', label: 'Hypertrophy', desc: 'Muscle Building' },
-                    { key: 'ENDURANCE', label: 'Endurance', desc: 'Stamina & Cardio' },
-                  ].map((g) => (
-                    <button
-                      type="button"
-                      key={g.key}
-                      onClick={() => setFormData({ ...formData, primary_goal: g.key })}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        formData.primary_goal === g.key
-                          ? 'border-brand bg-brand/15 text-white'
-                          : 'border-dark-border bg-dark-surface text-text-secondary hover:text-white'
-                      }`}
-                    >
-                      <div className="font-bold text-xs">{g.label}</div>
-                      <div className="text-[10px] text-text-muted mt-0.5">{g.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Experience Level & Location */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="fortis-label">Experience Level</label>
-                  <div className="flex gap-2">
-                    {['BEGINNER', 'INTERMEDIATE', 'ADVANCED'].map((exp) => (
-                      <button
-                        type="button"
-                        key={exp}
-                        onClick={() => setFormData({ ...formData, experience_level: exp })}
-                        className={`flex-1 py-2.5 rounded-xl border text-xs font-bold capitalize transition-all ${
-                          formData.experience_level === exp
-                            ? 'border-brand bg-brand/20 text-brand-light'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-text-primary'
-                        }`}
-                      >
-                        {exp.toLowerCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="fortis-label">Workout Location</label>
-                  <div className="flex gap-2">
-                    {[
-                      { id: 'home', label: 'Home' },
-                      { id: 'gym', label: 'Gym' },
-                      { id: 'outdoors', label: 'Outdoors' },
-                    ].map((loc) => (
-                      <button
-                        type="button"
-                        key={loc.id}
-                        onClick={() => setFormData({ ...formData, workout_location: loc.id })}
-                        className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-all ${
-                          formData.workout_location === loc.id
-                            ? 'border-brand bg-brand/20 text-brand-light'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-text-primary'
-                        }`}
-                      >
-                        {loc.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Equipment */}
-              <div>
-                <label className="fortis-label">Available Equipment (Select all that apply)</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { id: 'bodyweight', label: 'Bodyweight' },
-                    { id: 'dumbbells', label: 'Dumbbells' },
-                    { id: 'resistance_bands', label: 'Resistance Bands' },
-                    { id: 'barbell', label: 'Barbell & Plates' },
-                    { id: 'pull_up_bar', label: 'Pull-up Bar' },
-                    { id: 'full_gym', label: 'Full Gym Machines' },
-                  ].map((eq) => {
-                    const selected = formData.equipment_list?.includes(eq.id);
-                    return (
-                      <button
-                        type="button"
-                        key={eq.id}
-                        onClick={() => toggleArrayItem('equipment_list', eq.id)}
-                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition-all ${
-                          selected
-                            ? 'border-brand bg-brand/10 text-white'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                        }`}
-                      >
-                        <span>{eq.label}</span>
-                        {selected && <Check className="w-3.5 h-3.5 text-brand-light shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Schedule: Days & Duration */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="fortis-label">Workout Days Per Week ({formData.days_per_week || 3} days)</label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={7}
-                    value={formData.days_per_week || 3}
-                    onChange={(e) => setFormData({ ...formData, days_per_week: parseInt(e.target.value) || 3 })}
-                    className="w-full accent-brand cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-text-muted mt-1">
-                    <span>1 day</span>
-                    <span>3 days</span>
-                    <span>5 days</span>
-                    <span>7 days</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="fortis-label">Session Duration</label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[15, 30, 45, 60].map((dur) => (
-                      <button
-                        type="button"
-                        key={dur}
-                        onClick={() => setFormData({ ...formData, workout_duration_min: dur })}
-                        className={`py-2 rounded-xl border text-xs font-bold transition-all ${
-                          formData.workout_duration_min === dur
-                            ? 'border-brand bg-brand/20 text-brand-light'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                        }`}
-                      >
-                        {dur}m
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ───────────────── STEP 3: NUTRITION PREFERENCES ───────────────── */}
-          {currentStep === 3 && (
-            <div className="space-y-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Utensils className="w-5 h-5 text-emerald-400" />
-                  <h2 className="text-xl sm:text-2xl font-black text-white">Nutrition Preferences</h2>
-                </div>
-                <p className="text-xs sm:text-sm text-text-secondary">
-                  Fortis generates practical Indian & regional meal plans adapted to your dietary pattern and budget.
-                </p>
-              </div>
-
-              {/* Diet Type */}
-              <div>
-                <label className="fortis-label">Dietary Pattern</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { id: 'vegetarian', label: 'Vegetarian' },
-                    { id: 'eggetarian', label: 'Eggetarian' },
-                    { id: 'non_vegetarian', label: 'Non-Vegetarian' },
-                    { id: 'vegan', label: 'Vegan' },
-                  ].map((d) => (
-                    <button
-                      type="button"
-                      key={d.id}
-                      onClick={() => setFormData({ ...formData, diet_type: d.id })}
-                      className={`p-3 rounded-xl border text-xs font-bold text-center transition-all ${
-                        formData.diet_type === d.id
-                          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
-                          : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                      }`}
-                    >
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Preferred Cuisine & Daily Budget */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="fortis-label">Preferred Cuisine</label>
-                  <select
-                    value={formData.preferred_cuisine || 'Kerala/South Indian'}
-                    onChange={(e) => setFormData({ ...formData, preferred_cuisine: e.target.value })}
-                    className="fortis-input"
-                  >
-                    <option value="Kerala/South Indian">Kerala / South Indian</option>
-                    <option value="North Indian">North Indian</option>
-                    <option value="Continental/High-Protein">Continental / High-Protein</option>
-                    <option value="Flexible Mixed">Flexible Mixed</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="fortis-label">Daily Food Budget (₹ INR)</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted">₹</span>
-                    <input
-                      type="number"
-                      min={30}
-                      step="10"
-                      value={formData.daily_budget_inr || ''}
-                      onChange={(e) =>
-                        setFormData({ ...formData, daily_budget_inr: parseFloat(e.target.value) || 0 })
-                      }
-                      className="fortis-input pl-8"
-                      placeholder="e.g. 150"
+                    <span
+                      className={cx(
+                        'block h-1.5 rounded-full transition-colors',
+                        s.id < currentStep && 'bg-brand/70 group-hover:bg-brand',
+                        s.id === currentStep && 'bg-brand',
+                        s.id > currentStep && 'bg-dark-border',
+                      )}
                     />
-                  </div>
-                  <span className="text-[10px] text-text-muted mt-1 block">
-                    Recommended: ₹120 - ₹250 / day for balanced whole foods.
-                  </span>
-                </div>
-              </div>
-
-              {/* Meals per day & Cooking Access */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="fortis-label">Preferred Meals Per Day</label>
-                  <div className="flex gap-2">
-                    {[2, 3, 4, 5].map((m) => (
-                      <button
-                        type="button"
-                        key={m}
-                        onClick={() => setFormData({ ...formData, meals_per_day: m })}
-                        className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all ${
-                          formData.meals_per_day === m
-                            ? 'border-brand bg-brand/20 text-brand-light'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                        }`}
-                      >
-                        {m} meals
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="fortis-label">Cooking Access</label>
-                  <div className="flex gap-2">
-                    {[
-                      { id: 'home', label: 'Home Kitchen' },
-                      { id: 'hostel', label: 'Hostel / Mess' },
-                      { id: 'mixed', label: 'Mixed / Dining Out' },
-                    ].map((c) => (
-                      <button
-                        type="button"
-                        key={c.id}
-                        onClick={() => setFormData({ ...formData, cooking_access: c.id })}
-                        className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all ${
-                          formData.cooking_access === c.id
-                            ? 'border-brand bg-brand/20 text-brand-light'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                        }`}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Food Allergies / Restrictions (Optional) */}
-              <div>
-                <label className="fortis-label">Food Allergies or Avoidances (Optional)</label>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    value={allergyInput}
-                    onChange={(e) => setAllergyInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (allergyInput.trim() && !formData.allergies?.includes(allergyInput.trim())) {
-                          setFormData({ ...formData, allergies: [...(formData.allergies || []), allergyInput.trim()] });
-                          setAllergyInput('');
-                        }
-                      }
-                    }}
-                    placeholder="e.g. Peanuts, Dairy, Seafood (Press Enter)"
-                    className="fortis-input flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (allergyInput.trim() && !formData.allergies?.includes(allergyInput.trim())) {
-                        setFormData({ ...formData, allergies: [...(formData.allergies || []), allergyInput.trim()] });
-                        setAllergyInput('');
-                      }
-                    }}
-                    className="fortis-btn-secondary text-xs px-3"
-                  >
-                    Add
                   </button>
-                </div>
-                {formData.allergies && formData.allergies.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {formData.allergies.map((alg) => (
-                      <button
-                        type="button"
-                        key={alg}
-                        aria-label={`Remove ${alg}`}
-                        onClick={() =>
-                          setFormData({ ...formData, allergies: formData.allergies?.filter((a) => a !== alg) })
-                        }
-                        className="fortis-pill"
-                      >
-                        {alg} ×
-                      </button>
-                    ))}
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-text-muted">{step.title}</p>
+            </div>
+
+            <CoachTip tip={step.tip} className={cx('mb-4', showSidebar && 'lg:hidden')} />
+
+            {/* Wizard card */}
+            <div className="fortis-card rounded-3xl p-5 sm:p-8">
+              <div key={currentStep} className="ob-step">
+                {/* ───── STEP 1: PERSONAL DETAILS ───── */}
+                {currentStep === 1 && (
+                  <div className="space-y-6">
+                    <SectionTitle icon={User} iconClass="text-brand-light" title="Personal details">
+                      Welcome, <span className="text-white font-semibold">{userName}</span>. Tell us a bit about yourself so Fortis can
+                      calibrate your body metrics and recommendations.
+                    </SectionTitle>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label={<>Age <span className="text-brand">*</span></>} htmlFor="ob-age">
+                        <input
+                          id="ob-age"
+                          type="number"
+                          inputMode="numeric"
+                          min={12}
+                          max={120}
+                          value={formData.age || ''}
+                          onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
+                          className={inputCls}
+                          placeholder="e.g. 25"
+                          required
+                        />
+                      </Field>
+                      <Field label={<>Height (cm) <span className="text-brand">*</span></>} htmlFor="ob-height">
+                        <input
+                          id="ob-height"
+                          type="number"
+                          inputMode="decimal"
+                          min={50}
+                          max={280}
+                          value={formData.height_cm || ''}
+                          onChange={(e) => setFormData({ ...formData, height_cm: parseFloat(e.target.value) || undefined })}
+                          className={inputCls}
+                          placeholder="e.g. 175"
+                          required
+                        />
+                      </Field>
+                      <Field label={<>Weight (kg) <span className="text-brand">*</span></>} htmlFor="ob-weight">
+                        <input
+                          id="ob-weight"
+                          type="number"
+                          inputMode="decimal"
+                          min={20}
+                          max={350}
+                          step="0.1"
+                          value={formData.weight_kg || ''}
+                          onChange={(e) => setFormData({ ...formData, weight_kg: parseFloat(e.target.value) || undefined })}
+                          className={inputCls}
+                          placeholder="e.g. 70.5"
+                          required
+                        />
+                      </Field>
+                      <Field label={<>Region / country <span className="text-brand">*</span></>} htmlFor="regional-preference">
+                        <input
+                          id="regional-preference"
+                          type="text"
+                          value={formData.regional_preference || ''}
+                          onChange={(e) => setFormData({ ...formData, regional_preference: e.target.value })}
+                          className={inputCls}
+                          placeholder="e.g. Kerala, India"
+                          autoComplete="country-name"
+                          required
+                        />
+                      </Field>
+                    </div>
+                    <p className="text-[11px] text-text-muted -mt-3">
+                      Region is used to tailor local food suggestions and nutrition recommendations.
+                    </p>
+
+                    <Field label="Gender (optional)">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: 'male', label: 'Male' },
+                          { id: 'female', label: 'Female' },
+                          { id: 'other', label: 'Non-binary / other' },
+                          { id: 'unspecified', label: 'Prefer not to say' },
+                        ].map((g) => (
+                          <Choice
+                            key={g.id}
+                            center
+                            label={g.label}
+                            selected={(formData.gender || 'unspecified') === g.id}
+                            onClick={() => set({ gender: g.id })}
+                          />
+                        ))}
+                      </div>
+                    </Field>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
 
-          {/* ───────────────── STEP 4: LIFESTYLE & RECOVERY ───────────────── */}
-          {currentStep === 4 && (
-            <div className="space-y-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Moon className="w-5 h-5 text-indigo-400" />
-                  <h2 className="text-xl sm:text-2xl font-black text-white">Lifestyle & Recovery</h2>
-                </div>
-                <p className="text-xs sm:text-sm text-text-secondary">
-                  Your baseline sleep and energy patterns determine workout volume and Fortis Pulse readiness.
-                </p>
-              </div>
+                {/* ───── STEP 2: FITNESS GOALS ───── */}
+                {currentStep === 2 && (
+                  <div className="space-y-6">
+                    <SectionTitle icon={Target} iconClass="text-brand-light" title="Fitness goals & schedule">
+                      Choose your focus, training environment, and how much time you can commit.
+                    </SectionTitle>
 
-              {/* Sleep Duration */}
-              <div>
-                <label className="fortis-label">
-                  Average Sleep Duration ({formData.typical_sleep_hours || 7.5} hours)
-                </label>
-                <input
-                  type="range"
-                  min={4}
-                  max={12}
-                  step={0.5}
-                  value={formData.typical_sleep_hours || 7.5}
-                  onChange={(e) => setFormData({ ...formData, typical_sleep_hours: parseFloat(e.target.value) || 7.5 })}
-                  className="w-full accent-indigo-400 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-text-muted mt-1">
-                  <span>4 hrs</span>
-                  <span>7 hrs</span>
-                  <span>9 hrs</span>
-                  <span>12 hrs</span>
-                </div>
-              </div>
-
-              {/* Activity Level */}
-              <div>
-                <label className="fortis-label">Daily Activity Level</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {[
-                    { id: 'SEDENTARY', label: 'Sedentary', desc: 'Desk job, light walking' },
-                    { id: 'MODERATELY_ACTIVE', label: 'Moderately Active', desc: 'On feet, moderate steps' },
-                    { id: 'VERY_ACTIVE', label: 'Very Active', desc: 'Physical work, sports' },
-                  ].map((act) => (
-                    <button
-                      type="button"
-                      key={act.id}
-                      onClick={() => setFormData({ ...formData, activity_level: act.id })}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        formData.activity_level === act.id
-                          ? 'border-indigo-400 bg-indigo-500/15 text-white'
-                          : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                      }`}
-                    >
-                      <div className="font-bold text-xs">{act.label}</div>
-                      <div className="text-[10px] text-text-muted mt-0.5">{act.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Preferred Workout Time & Typical Energy */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="fortis-label">Preferred Workout Time</label>
-                  <div className="flex gap-2">
-                    {['morning', 'afternoon', 'evening'].map((time) => (
-                      <button
-                        type="button"
-                        key={time}
-                        onClick={() => setFormData({ ...formData, preferred_time: time })}
-                        className={`flex-1 py-2 rounded-xl border text-xs font-bold capitalize transition-all ${
-                          formData.preferred_time === time
-                            ? 'border-brand bg-brand/20 text-brand-light'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                        }`}
-                      >
-                        {time}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="fortis-label">
-                    Baseline Energy Level ({formData.typical_energy_level || 7} / 10)
-                  </label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={10}
-                    value={formData.typical_energy_level || 7}
-                    onChange={(e) => setFormData({ ...formData, typical_energy_level: parseInt(e.target.value) || 7 })}
-                    className="w-full accent-brand cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-text-muted mt-1">
-                    <span>Low (1)</span>
-                    <span>Moderate (5)</span>
-                    <span>High (10)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Optional Stress & Soreness */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-dark-border/60">
-                <div>
-                  {formData.typical_stress_level === undefined ? (
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, typical_stress_level: 5 })}
-                      className="fortis-btn-ghost text-xs px-0"
-                    >
-                      + Add typical stress level (optional)
-                    </button>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <label className="fortis-label text-xs mb-0">Typical Stress Level ({formData.typical_stress_level}/10)</label>
-                        <button type="button" onClick={() => setFormData({ ...formData, typical_stress_level: undefined })} className="text-[10px] text-text-muted hover:text-white">
-                          Clear
-                        </button>
+                    <Field label="Primary goal">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        {[
+                          { key: 'GENERAL_FITNESS', label: 'General fitness', desc: 'Health & balance' },
+                          { key: 'STRENGTH', label: 'Strength', desc: 'Power & core lifts' },
+                          { key: 'MUSCLE', label: 'Hypertrophy', desc: 'Muscle building' },
+                          { key: 'ENDURANCE', label: 'Endurance', desc: 'Stamina & cardio' },
+                        ].map((g) => (
+                          <Choice
+                            key={g.key}
+                            label={g.label}
+                            desc={g.desc}
+                            selected={formData.primary_goal === g.key}
+                            onClick={() => set({ primary_goal: g.key })}
+                          />
+                        ))}
                       </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={10}
-                        value={formData.typical_stress_level}
-                        onChange={(e) => setFormData({ ...formData, typical_stress_level: parseInt(e.target.value) })}
-                        className="w-full accent-warning cursor-pointer"
-                      />
-                    </>
-                  )}
-                </div>
-                <div>
-                  {formData.typical_soreness_level === undefined ? (
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, typical_soreness_level: 5 })}
-                      className="fortis-btn-ghost text-xs px-0"
-                    >
-                      + Add typical soreness level (optional)
-                    </button>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <label className="fortis-label text-xs mb-0">Typical Muscle Soreness ({formData.typical_soreness_level}/10)</label>
-                        <button type="button" onClick={() => setFormData({ ...formData, typical_soreness_level: undefined })} className="text-[10px] text-text-muted hover:text-white">
-                          Clear
-                        </button>
+                    </Field>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-4">
+                      <Field label="Experience level">
+                        <div className="grid grid-cols-3 gap-2">
+                          {['BEGINNER', 'INTERMEDIATE', 'ADVANCED'].map((exp) => (
+                            <Choice
+                              key={exp}
+                              center
+                              label={exp.charAt(0) + exp.slice(1).toLowerCase()}
+                              selected={formData.experience_level === exp}
+                              onClick={() => set({ experience_level: exp })}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                      <Field label="Workout location">
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'home', label: 'Home' },
+                            { id: 'gym', label: 'Gym' },
+                            { id: 'outdoors', label: 'Outdoors' },
+                          ].map((loc) => (
+                            <Choice
+                              key={loc.id}
+                              center
+                              label={loc.label}
+                              selected={formData.workout_location === loc.id}
+                              onClick={() => set({ workout_location: loc.id })}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                    </div>
+
+                    <Field label="Available equipment (select all that apply)">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {[
+                          { id: 'bodyweight', label: 'Bodyweight' },
+                          { id: 'dumbbells', label: 'Dumbbells' },
+                          { id: 'resistance_bands', label: 'Resistance bands' },
+                          { id: 'barbell', label: 'Barbell & plates' },
+                          { id: 'pull_up_bar', label: 'Pull-up bar' },
+                          { id: 'full_gym', label: 'Full gym machines' },
+                        ].map((eq) => (
+                          <Choice
+                            key={eq.id}
+                            check
+                            label={eq.label}
+                            selected={!!formData.equipment_list?.includes(eq.id)}
+                            onClick={() => toggleArrayItem('equipment_list', eq.id)}
+                          />
+                        ))}
                       </div>
-                      <input
-                        type="range"
+                    </Field>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-4">
+                      <RangeField
+                        label="Workout days per week"
+                        display={`${formData.days_per_week || 3} days`}
                         min={1}
-                        max={10}
-                        value={formData.typical_soreness_level}
-                        onChange={(e) => setFormData({ ...formData, typical_soreness_level: parseInt(e.target.value) })}
-                        className="w-full accent-warning cursor-pointer"
+                        max={7}
+                        value={formData.days_per_week || 3}
+                        ticks={['1', '3', '5', '7']}
+                        onChange={(v) => set({ days_per_week: v || 3 })}
                       />
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ───────────────── STEP 5: EXERCISE READINESS ───────────────── */}
-          {currentStep === 5 && (
-            <div className="space-y-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <ShieldCheck className="w-5 h-5 text-brand-light" />
-                  <h2 className="text-xl sm:text-2xl font-black text-white">Exercise Readiness & Safety</h2>
-                </div>
-                <p className="text-xs sm:text-sm text-text-secondary">
-                  Help Fortis safeguard your training. All fields in this step are optional.
-                </p>
-              </div>
-
-              {/* Injury / Movement notes */}
-              <div>
-                <label className="fortis-label">Injuries or Movement Limitations (Optional)</label>
-                <textarea
-                  rows={2}
-                  value={formData.injury_notes || ''}
-                  onChange={(e) => setFormData({ ...formData, injury_notes: e.target.value })}
-                  placeholder="e.g. Mild lower back sensitivity, recovering from right wrist sprain..."
-                  className="fortis-input resize-none text-xs"
-                />
-              </div>
-
-              {/* Exercises to avoid */}
-              <div>
-                <label className="fortis-label">Exercises or Movements to Avoid (Optional)</label>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    value={avoidInput}
-                    onChange={(e) => setAvoidInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (avoidInput.trim() && !formData.exercises_to_avoid?.includes(avoidInput.trim())) {
-                          setFormData({
-                            ...formData,
-                            exercises_to_avoid: [...(formData.exercises_to_avoid || []), avoidInput.trim()],
-                          });
-                          setAvoidInput('');
-                        }
-                      }
-                    }}
-                    placeholder="e.g. Overhead Press, Deep Squats (Press Enter)"
-                    className="fortis-input flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (avoidInput.trim() && !formData.exercises_to_avoid?.includes(avoidInput.trim())) {
-                        setFormData({
-                          ...formData,
-                          exercises_to_avoid: [...(formData.exercises_to_avoid || []), avoidInput.trim()],
-                        });
-                        setAvoidInput('');
-                      }
-                    }}
-                    className="fortis-btn-secondary text-xs px-3"
-                  >
-                    Add
-                  </button>
-                </div>
-                {formData.exercises_to_avoid && formData.exercises_to_avoid.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {formData.exercises_to_avoid.map((ex) => (
-                      <button
-                        type="button"
-                        key={ex}
-                        aria-label={`Remove ${ex}`}
-                        onClick={() =>
-                          setFormData({
-                            ...formData,
-                            exercises_to_avoid: formData.exercises_to_avoid?.filter((i) => i !== ex),
-                          })
-                        }
-                        className="fortis-pill"
-                      >
-                        {ex} ×
-                      </button>
-                    ))}
+                      <Field label="Session duration">
+                        <div className="grid grid-cols-4 gap-2">
+                          {[15, 30, 45, 60].map((dur) => (
+                            <Choice
+                              key={dur}
+                              center
+                              label={`${dur}m`}
+                              selected={formData.workout_duration_min === dur}
+                              onClick={() => set({ workout_duration_min: dur })}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                    </div>
                   </div>
                 )}
-              </div>
 
-              {/* Preferred Exercise Types */}
-              <div>
-                <label className="fortis-label">Preferred Exercise Styles</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {['Full Body', 'Strength Splits', 'Cardio / HIIT', 'Mobility & Core'].map((style) => {
-                    const selected = formData.preferred_exercise_types?.includes(style);
-                    return (
-                      <button
-                        type="button"
-                        key={style}
-                        onClick={() => toggleArrayItem('preferred_exercise_types', style)}
-                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition-all ${
-                          selected
-                            ? 'border-brand bg-brand/10 text-white'
-                            : 'border-dark-border bg-dark-surface text-text-muted hover:text-white'
-                        }`}
+                {/* ───── STEP 3: NUTRITION ───── */}
+                {currentStep === 3 && (
+                  <div className="space-y-6">
+                    <SectionTitle icon={Utensils} iconClass="text-emerald-400" title="Nutrition preferences">
+                      Fortis builds practical Indian and regional meal plans around your diet pattern and budget.
+                    </SectionTitle>
+
+                    <Field label="Dietary pattern">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        {[
+                          { id: 'vegetarian', label: 'Vegetarian' },
+                          { id: 'eggetarian', label: 'Eggetarian' },
+                          { id: 'non_vegetarian', label: 'Non-vegetarian' },
+                          { id: 'vegan', label: 'Vegan' },
+                        ].map((d) => (
+                          <Choice
+                            key={d.id}
+                            center
+                            tone="emerald"
+                            label={d.label}
+                            selected={formData.diet_type === d.id}
+                            onClick={() => set({ diet_type: d.id })}
+                          />
+                        ))}
+                      </div>
+                    </Field>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Field label="Preferred cuisine" htmlFor="ob-cuisine">
+                        <select
+                          id="ob-cuisine"
+                          value={formData.preferred_cuisine || 'Kerala/South Indian'}
+                          onChange={(e) => set({ preferred_cuisine: e.target.value })}
+                          className={inputCls}
+                        >
+                          <option value="Kerala/South Indian">Kerala / South Indian</option>
+                          <option value="North Indian">North Indian</option>
+                          <option value="Continental/High-Protein">Continental / High-Protein</option>
+                          <option value="Flexible Mixed">Flexible Mixed</option>
+                        </select>
+                      </Field>
+                      <Field
+                        label="Daily food budget (₹ INR)"
+                        htmlFor="ob-budget"
+                        hint="Recommended: ₹120 – ₹250 per day for balanced whole foods."
                       >
-                        <span>{style}</span>
-                        {selected && <Check className="w-3.5 h-3.5 text-brand-light shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-text-muted">₹</span>
+                          <input
+                            id="ob-budget"
+                            type="number"
+                            inputMode="numeric"
+                            min={30}
+                            step="10"
+                            value={formData.daily_budget_inr || ''}
+                            onChange={(e) => set({ daily_budget_inr: parseFloat(e.target.value) || 0 })}
+                            className={cx(inputCls, 'pl-8')}
+                            placeholder="e.g. 150"
+                          />
+                        </div>
+                      </Field>
+                    </div>
 
-              <div>
-                <label className="fortis-label">Strength Benchmarks (Optional, kg)</label>
-                <p className="text-[10px] text-text-muted mb-2">
-                  Add recent working weights if you know them. Leave blank if you are unsure.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {[
-                    { key: 'squat_kg', label: 'Squat' },
-                    { key: 'bench_kg', label: 'Bench press' },
-                    { key: 'deadlift_kg', label: 'Deadlift' },
-                  ].map((lift) => (
-                    <div key={lift.key}>
-                      <label className="fortis-label text-xs" htmlFor={`benchmark-${lift.key}`}>
-                        {lift.label} (kg)
-                      </label>
-                      <input
-                        id={`benchmark-${lift.key}`}
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        value={formData.strength_benchmarks?.[lift.key] ?? ''}
-                        onChange={(e) => {
-                          const benchmarks = { ...(formData.strength_benchmarks || {}) };
-                          if (e.target.value === '') {
-                            delete benchmarks[lift.key];
-                          } else {
-                            benchmarks[lift.key] = Number(e.target.value);
-                          }
-                          setFormData({ ...formData, strength_benchmarks: benchmarks });
-                        }}
-                        className="fortis-input"
-                        placeholder="Not provided"
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-4">
+                      <Field label="Meals per day">
+                        <div className="grid grid-cols-4 gap-2">
+                          {[2, 3, 4, 5].map((m) => (
+                            <Choice
+                              key={m}
+                              center
+                              label={`${m}`}
+                              selected={formData.meals_per_day === m}
+                              onClick={() => set({ meals_per_day: m })}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                      <Field label="Cooking access">
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'home', label: 'Home kitchen' },
+                            { id: 'hostel', label: 'Hostel / mess' },
+                            { id: 'mixed', label: 'Mixed / dining out' },
+                          ].map((c) => (
+                            <Choice
+                              key={c.id}
+                              center
+                              label={c.label}
+                              selected={formData.cooking_access === c.id}
+                              onClick={() => set({ cooking_access: c.id })}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                    </div>
+
+                    <Field label="Food allergies or avoidances (optional)">
+                      <TagInput
+                        items={formData.allergies || []}
+                        onChange={(allergies) => set({ allergies })}
+                        placeholder="e.g. Peanuts, dairy, seafood"
+                      />
+                    </Field>
+                  </div>
+                )}
+
+                {/* ───── STEP 4: LIFESTYLE ───── */}
+                {currentStep === 4 && (
+                  <div className="space-y-6">
+                    <SectionTitle icon={Moon} iconClass="text-indigo-400" title="Lifestyle & recovery">
+                      Your baseline sleep and energy set your workout volume and Fortis Pulse readiness.
+                    </SectionTitle>
+
+                    <RangeField
+                      label="Average sleep"
+                      display={`${formData.typical_sleep_hours || 7.5} h`}
+                      min={4}
+                      max={12}
+                      step={0.5}
+                      accent="accent-indigo-400"
+                      value={formData.typical_sleep_hours || 7.5}
+                      ticks={['4 h', '7 h', '9 h', '12 h']}
+                      onChange={(v) => set({ typical_sleep_hours: v || 7.5 })}
+                    />
+
+                    <Field label="Daily activity level">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        {[
+                          { id: 'SEDENTARY', label: 'Sedentary', desc: 'Desk job, light walking' },
+                          { id: 'MODERATELY_ACTIVE', label: 'Moderately active', desc: 'On feet, moderate steps' },
+                          { id: 'VERY_ACTIVE', label: 'Very active', desc: 'Physical work, sports' },
+                        ].map((act) => (
+                          <Choice
+                            key={act.id}
+                            tone="indigo"
+                            label={act.label}
+                            desc={act.desc}
+                            selected={formData.activity_level === act.id}
+                            onClick={() => set({ activity_level: act.id })}
+                          />
+                        ))}
+                      </div>
+                    </Field>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-4">
+                      <Field label="Preferred workout time">
+                        <div className="grid grid-cols-3 gap-2">
+                          {['morning', 'afternoon', 'evening'].map((time) => (
+                            <Choice
+                              key={time}
+                              center
+                              label={time.charAt(0).toUpperCase() + time.slice(1)}
+                              selected={formData.preferred_time === time}
+                              onClick={() => set({ preferred_time: time })}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                      <RangeField
+                        label="Baseline energy"
+                        display={`${formData.typical_energy_level || 7} / 10`}
+                        min={1}
+                        max={10}
+                        value={formData.typical_energy_level || 7}
+                        ticks={['Low', 'Moderate', 'High']}
+                        onChange={(v) => set({ typical_energy_level: v || 7 })}
                       />
                     </div>
-                  ))}
-                </div>
+
+                    {/* Optional stress & soreness */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-4 pt-5 border-t border-dark-border/60">
+                      {(
+                        [
+                          { key: 'typical_stress_level', label: 'Typical stress level', add: '+ Add typical stress level (optional)' },
+                          { key: 'typical_soreness_level', label: 'Typical muscle soreness', add: '+ Add typical soreness level (optional)' },
+                        ] as const
+                      ).map((opt) => {
+                        const val = formData[opt.key];
+                        return (
+                          <div key={opt.key}>
+                            {val === undefined ? (
+                              <button
+                                type="button"
+                                onClick={() => set({ [opt.key]: 5 } as Partial<OnboardingData>)}
+                                className="w-full min-h-[44px] rounded-xl border border-dashed border-dark-border text-xs font-semibold text-text-secondary hover:text-white hover:border-brand/40 transition-colors px-3"
+                              >
+                                {opt.add}
+                              </button>
+                            ) : (
+                              <div>
+                                <RangeField
+                                  label={opt.label}
+                                  display={`${val} / 10`}
+                                  min={1}
+                                  max={10}
+                                  accent="accent-warning"
+                                  value={val}
+                                  onChange={(v) => set({ [opt.key]: v } as Partial<OnboardingData>)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => set({ [opt.key]: undefined } as Partial<OnboardingData>)}
+                                  className="text-[11px] text-text-muted hover:text-white mt-1 py-1"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ───── STEP 5: EXERCISE READINESS ───── */}
+                {currentStep === 5 && (
+                  <div className="space-y-6">
+                    <SectionTitle icon={ShieldCheck} iconClass="text-brand-light" title="Exercise readiness & safety">
+                      Help Fortis safeguard your training. Everything in this step is optional.
+                    </SectionTitle>
+
+                    <Field label="Injuries or movement limitations (optional)" htmlFor="ob-injury">
+                      <textarea
+                        id="ob-injury"
+                        rows={3}
+                        value={formData.injury_notes || ''}
+                        onChange={(e) => set({ injury_notes: e.target.value })}
+                        placeholder="e.g. Mild lower back sensitivity, recovering from a right wrist sprain…"
+                        className={cx(inputCls, 'resize-none')}
+                      />
+                    </Field>
+
+                    <Field label="Exercises or movements to avoid (optional)">
+                      <TagInput
+                        items={formData.exercises_to_avoid || []}
+                        onChange={(exercises_to_avoid) => set({ exercises_to_avoid })}
+                        placeholder="e.g. Overhead press, deep squats"
+                      />
+                    </Field>
+
+                    <Field label="Preferred exercise styles">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {['Full Body', 'Strength Splits', 'Cardio / HIIT', 'Mobility & Core'].map((style) => (
+                          <Choice
+                            key={style}
+                            check
+                            label={style}
+                            selected={!!formData.preferred_exercise_types?.includes(style)}
+                            onClick={() => toggleArrayItem('preferred_exercise_types', style)}
+                          />
+                        ))}
+                      </div>
+                    </Field>
+
+                    <Field
+                      label="Strength benchmarks (optional, kg)"
+                      hint="Add recent working weights if you know them. Leave blank if you are unsure."
+                    >
+                      <div className="grid grid-cols-3 gap-3">
+                        {[
+                          { key: 'squat_kg', label: 'Squat' },
+                          { key: 'bench_kg', label: 'Bench' },
+                          { key: 'deadlift_kg', label: 'Deadlift' },
+                        ].map((lift) => (
+                          <div key={lift.key}>
+                            <label className="text-[11px] text-text-muted block mb-1" htmlFor={`benchmark-${lift.key}`}>
+                              {lift.label}
+                            </label>
+                            <input
+                              id={`benchmark-${lift.key}`}
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              step="0.5"
+                              value={formData.strength_benchmarks?.[lift.key] ?? ''}
+                              onChange={(e) => {
+                                const benchmarks = { ...(formData.strength_benchmarks || {}) };
+                                if (e.target.value === '') {
+                                  delete benchmarks[lift.key];
+                                } else {
+                                  benchmarks[lift.key] = Number(e.target.value);
+                                }
+                                set({ strength_benchmarks: benchmarks });
+                              }}
+                              className={inputCls}
+                              placeholder="kg"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </Field>
+                  </div>
+                )}
+
+                {/* ───── STEP 6: REVIEW ───── */}
+                {currentStep === 6 && (
+                  <div className="space-y-6">
+                    <SectionTitle icon={Sparkles} iconClass="text-brand" title="Review & generate plans">
+                      Confirm your details. Fortis will generate your personalised starter workout plan and nutrition blueprint.
+                    </SectionTitle>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <ReviewCard
+                        title="Personal details"
+                        titleClass="text-brand-light"
+                        onEdit={() => goToStep(1)}
+                        rows={[
+                          ['Age', `${formData.age} yrs`],
+                          ['Gender', formData.gender === 'unspecified' ? 'Prefer not to say' : formData.gender || 'Prefer not to say'],
+                          ['Height / weight', `${formData.height_cm} cm · ${formData.weight_kg} kg`],
+                          ['Region', formData.regional_preference],
+                        ]}
+                      />
+                      <ReviewCard
+                        title="Fitness & training"
+                        titleClass="text-brand-light"
+                        onEdit={() => goToStep(2)}
+                        rows={[
+                          ['Goal', pretty(formData.primary_goal)],
+                          ['Experience', pretty(formData.experience_level)],
+                          ['Location', formData.workout_location],
+                          ['Equipment', formData.equipment_list?.join(', ') || 'None selected'],
+                          ['Schedule', `${formData.days_per_week} days/week · ${formData.workout_duration_min} min`],
+                        ]}
+                      />
+                      <ReviewCard
+                        title="Nutrition"
+                        titleClass="text-emerald-400"
+                        onEdit={() => goToStep(3)}
+                        rows={[
+                          ['Diet', pretty(formData.diet_type)],
+                          ['Cuisine', formData.preferred_cuisine],
+                          ['Allergies', formData.allergies?.join(', ') || 'None'],
+                          ['Budget', `₹${formData.daily_budget_inr}/day · ${formData.meals_per_day} meals`],
+                          ['Cooking', formData.cooking_access],
+                        ]}
+                      />
+                      <ReviewCard
+                        title="Lifestyle"
+                        titleClass="text-indigo-400"
+                        onEdit={() => goToStep(4)}
+                        rows={[
+                          ['Sleep', `${formData.typical_sleep_hours} hours/night`],
+                          ['Activity', pretty(formData.activity_level)],
+                          ['Energy', `${formData.typical_energy_level}/10`],
+                          ['Workout time', formData.preferred_time],
+                          ['Stress', formData.typical_stress_level ? `${formData.typical_stress_level}/10` : 'Not provided'],
+                          ['Soreness', formData.typical_soreness_level ? `${formData.typical_soreness_level}/10` : 'Not provided'],
+                        ]}
+                      />
+                      <ReviewCard
+                        wide
+                        title="Exercise readiness"
+                        titleClass="text-brand-light"
+                        onEdit={() => goToStep(5)}
+                        rows={[
+                          ['Injury notes', formData.injury_notes?.trim() || 'None provided'],
+                          ['Avoiding', formData.exercises_to_avoid?.join(', ') || 'None specified'],
+                          ['Preferred styles', formData.preferred_exercise_types?.join(', ') || 'No preference'],
+                          ['Benchmarks', benchmarksText],
+                        ]}
+                      />
+                    </div>
+
+                    <div className="bg-brand/10 border border-brand/20 rounded-2xl p-4 text-xs text-text-secondary leading-relaxed flex items-start gap-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-brand-light shrink-0 mt-0.5" />
+                      <span>
+                        Your starter plans are generated from your saved profile without fabricating past history or scores. Log real
+                        workouts and recovery to start building your actual Fortis Pulse.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
 
-          {/* ───────────────── STEP 6: REVIEW & CREATE PLAN ───────────────── */}
-          {currentStep === 6 && (
-            <div className="space-y-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Sparkles className="w-5 h-5 text-brand" />
-                  <h2 className="text-xl sm:text-2xl font-black text-white">Review & Generate Plans</h2>
+            {/* ── Sticky action bar (errors appear here so they are never off-screen) ── */}
+            <div className="sticky bottom-0 z-20 -mx-4 sm:mx-0 px-4 sm:px-0 mt-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-dark-bg via-dark-bg/95 to-transparent">
+              {error && (
+                <div
+                  role="alert"
+                  className="mb-3 flex items-start gap-2.5 bg-danger/10 border border-danger/30 rounded-xl p-3 text-xs text-danger backdrop-blur"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="min-w-0 break-words">{error}</span>
                 </div>
-                <p className="text-xs sm:text-sm text-text-secondary">
-                  Confirm your details below. Fortis will generate your personalized starter workout plan and nutrition blueprint.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <section className="fortis-card p-4 space-y-2">
-                  <div className="flex items-center justify-between font-bold text-white">
-                    <h3 className="text-brand-light">Personal Details</h3>
-                    <button type="button" onClick={() => setCurrentStep(1)} className="text-[10px] text-brand hover:underline">
-                      Edit
-                    </button>
-                  </div>
-                  <p className="text-text-secondary">{formData.age} yrs · {formData.gender || 'Prefer not to say'}</p>
-                  <p className="text-text-secondary">{formData.height_cm} cm · {formData.weight_kg} kg</p>
-                  <p className="text-text-secondary">Region / country: <span className="text-white">{formData.regional_preference}</span></p>
-                </section>
-
-                <section className="fortis-card p-4 space-y-2">
-                  <div className="flex items-center justify-between font-bold text-white">
-                    <h3 className="text-brand-light">Fitness & Training</h3>
-                    <button type="button" onClick={() => setCurrentStep(2)} className="text-[10px] text-brand hover:underline">
-                      Edit
-                    </button>
-                  </div>
-                  <p className="text-text-secondary">Goal: <span className="text-white">{formData.primary_goal?.replace(/_/g, ' ')}</span></p>
-                  <p className="text-text-secondary">Experience: <span className="text-white">{formData.experience_level?.toLowerCase()}</span></p>
-                  <p className="text-text-secondary">Location: <span className="text-white">{formData.workout_location}</span></p>
-                  <p className="text-text-secondary">Equipment: <span className="text-white">{formData.equipment_list?.join(', ') || 'None selected'}</span></p>
-                  <p className="text-text-secondary">{formData.days_per_week} days/week · {formData.workout_duration_min} min/session</p>
-                </section>
-
-                <section className="fortis-card p-4 space-y-2">
-                  <div className="flex items-center justify-between font-bold text-white">
-                    <h3 className="text-emerald-400">Nutrition</h3>
-                    <button type="button" onClick={() => setCurrentStep(3)} className="text-[10px] text-emerald-400 hover:underline">
-                      Edit
-                    </button>
-                  </div>
-                  <p className="text-text-secondary">Diet: <span className="text-white">{formData.diet_type?.replace(/_/g, ' ')}</span></p>
-                  <p className="text-text-secondary">Cuisine: <span className="text-white">{formData.preferred_cuisine}</span></p>
-                  <p className="text-text-secondary">Allergies / restrictions: <span className="text-white">{formData.allergies?.join(', ') || 'None'}</span></p>
-                  <p className="text-text-secondary">Budget: <span className="text-white">₹{formData.daily_budget_inr}/day</span> · {formData.meals_per_day} meals/day</p>
-                  <p className="text-text-secondary">Cooking access: <span className="text-white">{formData.cooking_access}</span></p>
-                </section>
-
-                <section className="fortis-card p-4 space-y-2">
-                  <div className="flex items-center justify-between font-bold text-white">
-                    <h3 className="text-indigo-400">Lifestyle</h3>
-                    <button type="button" onClick={() => setCurrentStep(4)} className="text-[10px] text-indigo-400 hover:underline">
-                      Edit
-                    </button>
-                  </div>
-                  <p className="text-text-secondary">Sleep: <span className="text-white">{formData.typical_sleep_hours} hours/night</span></p>
-                  <p className="text-text-secondary">Activity: <span className="text-white">{formData.activity_level?.replace(/_/g, ' ')}</span></p>
-                  <p className="text-text-secondary">Energy: <span className="text-white">{formData.typical_energy_level}/10</span> · Workout time: <span className="text-white">{formData.preferred_time}</span></p>
-                  <p className="text-text-secondary">Stress: <span className="text-white">{formData.typical_stress_level ? `${formData.typical_stress_level}/10` : 'Not provided'}</span> · Soreness: <span className="text-white">{formData.typical_soreness_level ? `${formData.typical_soreness_level}/10` : 'Not provided'}</span></p>
-                </section>
-
-                <section className="fortis-card p-4 space-y-2 sm:col-span-2">
-                  <div className="flex items-center justify-between font-bold text-white">
-                    <h3 className="text-brand-light">Exercise Readiness</h3>
-                    <button type="button" onClick={() => setCurrentStep(5)} className="text-[10px] text-brand hover:underline">
-                      Edit
-                    </button>
-                  </div>
-                  <p className="text-text-secondary">Injury / movement notes: <span className="text-white">{formData.injury_notes?.trim() || 'None provided'}</span></p>
-                  <p className="text-text-secondary">Exercises to avoid: <span className="text-white">{formData.exercises_to_avoid?.join(', ') || 'None specified'}</span></p>
-                  <p className="text-text-secondary">Preferred exercise types: <span className="text-white">{formData.preferred_exercise_types?.join(', ') || 'No preference'}</span></p>
-                  <p className="text-text-secondary">
-                    Strength benchmarks: <span className="text-white">
-                      {Object.entries(formData.strength_benchmarks || {})
-                        .filter(([, value]) => value !== undefined && value !== '')
-                        .map(([lift, value]) => `${lift.replace('_kg', '').replace('_', ' ')} ${value} kg`)
-                        .join(' · ') || 'Not provided'}
-                    </span>
-                  </p>
-                </section>
-              </div>
-
-              {/* Disclaimer Note */}
-              <div className="bg-brand/10 border border-brand/20 rounded-2xl p-4 text-xs text-text-secondary leading-relaxed flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-brand-light shrink-0 mt-0.5" />
-                <span>
-                  Your starter plans are generated from your saved profile without fabricating past history or scores. You can log real workouts and recovery to start building your actual Fortis Pulse.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Footer Controls */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-dark-border">
-            {currentStep > 1 ? (
-              <button
-                type="button"
-                onClick={handleBack}
-                disabled={submitting}
-                className="fortis-btn-secondary flex items-center gap-1.5 text-xs py-2.5 px-4"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Back
-              </button>
-            ) : (
-              <div />
-            )}
-
-            <div className="flex items-center gap-3">
-              {currentStep === 5 && (
-                <button
-                  type="button"
-                  onClick={handleSkip}
-                  disabled={submitting}
-                  className="fortis-btn-ghost text-xs py-2.5 px-4"
-                >
-                  Skip for now
-                </button>
               )}
 
-              {currentStep < TOTAL_STEPS ? (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  className="fortis-btn-primary flex items-center gap-1.5 text-xs py-2.5 px-5"
-                >
-                  Continue
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="fortis-btn-primary flex items-center gap-2 text-sm py-3 px-6 shadow-glow"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Creating My Fitness Plan…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Create My Fitness Plan
-                    </>
-                  )}
-                </button>
-              )}
+              <div className="flex items-center gap-2.5">
+                {currentStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    disabled={submitting}
+                    aria-label="Back"
+                    className="fortis-btn-secondary flex items-center justify-center gap-1.5 text-xs min-h-[48px] px-4 shrink-0"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span className="hidden min-[380px]:inline">Back</span>
+                  </button>
+                )}
+
+                {currentStep === 5 && (
+                  <button
+                    type="button"
+                    onClick={handleSkip}
+                    disabled={submitting}
+                    className="fortis-btn-ghost text-xs min-h-[48px] px-3 shrink-0"
+                  >
+                    Skip
+                  </button>
+                )}
+
+                {currentStep < TOTAL_STEPS ? (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="fortis-btn-primary flex-1 flex items-center justify-center gap-2 text-sm font-bold min-h-[48px] px-5"
+                  >
+                    Continue
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="fortis-btn-primary flex-1 flex items-center justify-center gap-2 text-sm font-bold min-h-[48px] px-5 shadow-glow"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Creating your plan…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Create my fitness plan
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Footer Branding */}
-      {!isModal && (
-        <div className="text-center text-xs text-text-muted mt-2 relative z-10">
-          Fortis AI Adaptive Fitness System · Secure & Private
-        </div>
-      )}
+        {/* Footer branding */}
+        {!isModal && (
+          <p className="text-center text-xs text-text-muted py-5">Fortis AI Adaptive Fitness System · Secure & private</p>
+        )}
+      </div>
     </div>
   );
 };

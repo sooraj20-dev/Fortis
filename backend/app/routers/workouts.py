@@ -45,10 +45,24 @@ def serialize_workout(workout: Workout, db: Session) -> dict:
     exercises = db.query(WorkoutExercise).filter(
         WorkoutExercise.workout_id == workout.id
     ).order_by(WorkoutExercise.order_index).all()
+
+    ex_ids = [we.exercise_id for we in exercises if getattr(we, "exercise_id", None) is not None]
+    we_ids = [we.id for we in exercises if getattr(we, "id", None) is not None]
+
+    ex_map = {}
+    if ex_ids:
+        for ex in db.query(Exercise).filter(Exercise.id.in_(ex_ids)).all():
+            ex_map[ex.id] = ex
+
+    logs_by_we = {}
+    if we_ids:
+        for l in db.query(ExerciseLog).filter(ExerciseLog.workout_exercise_id.in_(we_ids)).all():
+            logs_by_we.setdefault(l.workout_exercise_id, []).append(l)
+
     exercises_data = []
     for we in exercises:
-        ex = db.query(Exercise).filter(Exercise.id == we.exercise_id).first()
-        logs = db.query(ExerciseLog).filter(ExerciseLog.workout_exercise_id == we.id).all()
+        ex = ex_map.get(we.exercise_id)
+        logs = logs_by_we.get(we.id, [])
         exercises_data.append({
             "id": we.id,
             "exercise": {

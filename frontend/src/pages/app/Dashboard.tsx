@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FortisPulse } from '../../components/fortis/FortisPulse';
 import { FortisDecision } from '../../components/fortis/FortisDecision';
 import {
@@ -12,7 +12,6 @@ import {
   ScanLine,
   Activity,
   Sparkles,
-  X,
   CheckCircle2,
   ShieldCheck,
   Target,
@@ -24,8 +23,92 @@ import { Link } from 'react-router-dom';
 import api, { getCached } from '../../services/api';
 import { getLatestScan } from '../../services/scanApi';
 import { useAuthStore } from '../../stores/authStore';
+import { useDashboardStore } from '../../stores/dashboardStore';
+import SplashScreen from '../../components/SplashScreen';
 import Onboarding from '../Onboarding';
 import type { ScanResult } from '../../types/scan';
+
+const COACH_IMG = '/landing_imgs/hero.png';
+
+const COACH_QUOTES = [
+  "The iron doesn't care about your excuses. Your body does, so listen to it.",
+  'Rest is not weakness. It is where the strength actually gets built.',
+  'Beat the man you were yesterday. Nobody else is on your scoreboard.',
+  'Heavy days make you strong. Smart days keep you standing.',
+  'Show up tired. Leave proud. That is the whole secret.',
+];
+
+const cx = (...c: Array<string | false | undefined | null>) => c.filter(Boolean).join(' ');
+
+const titleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+/* ───────────────────────── UI pieces ───────────────────────── */
+
+const StatCard: React.FC<{
+  icon: React.ElementType;
+  iconClass: string;
+  label: string;
+  value: string;
+  sub: string;
+}> = ({ icon: Icon, iconClass, label, value, sub }) => (
+  <div className="bg-dark-card border border-dark-border/80 rounded-2xl p-4 shadow-card hover:border-brand/30 transition-colors min-w-[72%] min-[480px]:min-w-[44%] md:min-w-0 snap-start">
+    <div className="flex items-center gap-2 mb-2">
+      <span className="w-7 h-7 rounded-lg bg-dark-surface flex items-center justify-center shrink-0">
+        <Icon className={cx('w-4 h-4', iconClass)} />
+      </span>
+      <span className="text-xs font-semibold text-text-muted">{label}</span>
+    </div>
+    <h4 className="text-base font-black text-white leading-snug line-clamp-2">{value}</h4>
+    <p className="text-[11px] text-text-secondary mt-1 line-clamp-2">{sub}</p>
+  </div>
+);
+
+const Panel: React.FC<{ className?: string; children: React.ReactNode }> = ({ className, children }) => (
+  <div className={cx('bg-dark-card border border-dark-border rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-card', className)}>
+    {children}
+  </div>
+);
+
+const PanelHeader: React.FC<{
+  icon: React.ElementType;
+  iconClass: string;
+  title: string;
+  to?: string;
+  action?: string;
+}> = ({ icon: Icon, iconClass, title, to, action }) => (
+  <div className="flex items-center justify-between gap-3 mb-4">
+    <div className="flex items-center gap-2 min-w-0">
+      <Icon className={cx('w-4 h-4 shrink-0', iconClass)} />
+      <h3 className="font-bold text-sm text-white truncate">{title}</h3>
+    </div>
+    {to && action && (
+      <Link to={to} className="text-xs text-brand-light font-semibold hover:underline shrink-0 py-1">
+        {action} →
+      </Link>
+    )}
+  </div>
+);
+
+const MiniStat: React.FC<{ label: string; value: string; valueClass?: string }> = ({ label, value, valueClass }) => (
+  <div className="p-3 bg-dark-surface rounded-xl text-center">
+    <span className="text-[11px] text-text-muted block">{label}</span>
+    <span className={cx('text-base font-extrabold', valueClass || 'text-white')}>{value}</span>
+  </div>
+);
+
+const Bar: React.FC<{ label: string; right: string; pct: number; barClass: string }> = ({ label, right, pct, barClass }) => (
+  <div>
+    <div className="flex justify-between gap-3 text-xs mb-1.5 text-text-secondary">
+      <span className="min-w-0 truncate">{label}</span>
+      <span className="shrink-0 tabular-nums">{right}</span>
+    </div>
+    <div className="w-full bg-dark-border h-2 rounded-full overflow-hidden">
+      <div className={cx('h-full rounded-full transition-all duration-700', barClass)} style={{ width: `${Math.min(100, pct)}%` }} />
+    </div>
+  </div>
+);
+
+/* ───────────────────────── Page ───────────────────────── */
 
 export const Dashboard: React.FC = () => {
   const onboardingComplete = useAuthStore((s) => s.onboardingComplete);
@@ -33,33 +116,22 @@ export const Dashboard: React.FC = () => {
 
   // Show onboarding wizard ONLY for newly registered users whose onboarding is incomplete
   const isNewRegistration =
-    typeof window !== 'undefined' &&
-    sessionStorage.getItem('fortis_new_registration') === 'true';
+    typeof window !== 'undefined' && sessionStorage.getItem('fortis_new_registration') === 'true';
 
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [latestScan, setLatestScan] = useState<ScanResult | null>(null);
-  const [showOnboardingModal, setShowOnboardingModal] = useState(
-    !onboardingComplete && isNewRegistration
-  );
+  const {
+    data,
+    loading,
+    latestScan,
+    fetchDashboardData,
+    fetchLatestScan,
+  } = useDashboardStore();
 
-  const fetchDashboardData = () => {
-    setLoading(true);
-    getCached('/api/dashboard')
-      .then((res) => {
-        setData(res.data);
-      })
-      .catch((err) => {
-        console.error('Failed to load dashboard data:', err);
-        setData(null);
-      })
-      .finally(() => setLoading(false));
-  };
+  const [showOnboardingModal, setShowOnboardingModal] = useState(!onboardingComplete && isNewRegistration);
 
   useEffect(() => {
     fetchDashboardData();
-    getLatestScan().then(setLatestScan).catch(() => null);
-  }, []);
+    fetchLatestScan();
+  }, [fetchDashboardData, fetchLatestScan]);
 
   // Sync modal state if store changes
   useEffect(() => {
@@ -69,360 +141,331 @@ export const Dashboard: React.FC = () => {
     }
   }, [onboardingComplete]);
 
-  const handleOnboardingComplete = () => {
+  // Lock page scroll behind the full-screen setup sheet
+  useEffect(() => {
+    if (!showOnboardingModal) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showOnboardingModal]);
+
+  const closeOnboarding = () => {
     setShowOnboardingModal(false);
     sessionStorage.removeItem('fortis_new_registration');
-    fetchDashboardData();
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-3 text-text-muted">
-          <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-medium">Synthesizing Personal Fitness State...</span>
-        </div>
-      </div>
-    );
+  const handleOnboardingComplete = () => {
+    closeOnboarding();
+    fetchDashboardData(true);
+  };
+
+  if (loading && !data) {
+    return <SplashScreen isLoader message="Synthesizing your Personal Fitness State…" />;
   }
 
   // Onboarding summary data helpers
   const ob = data?.onboarding_summary || {};
-  const goalTitle = (ob.primary_goal || 'GENERAL_FITNESS')
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c: string) => c.toUpperCase());
-
-  const experienceTitle = (ob.experience_level || 'BEGINNER')
-    .toLowerCase()
-    .replace(/\b\w/g, (c: string) => c.toUpperCase());
-
-  const locationTitle = (ob.workout_location || 'home')
-    .toLowerCase()
-    .replace(/\b\w/g, (c: string) => c.toUpperCase());
-
-  const dietTitle = (ob.diet_type || 'Balanced Diet')
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c: string) => c.toUpperCase());
-
+  const goalTitle = titleCase((ob.primary_goal || 'GENERAL_FITNESS').replace(/_/g, ' '));
+  const experienceTitle = titleCase(ob.experience_level || 'BEGINNER');
+  const locationTitle = titleCase(ob.workout_location || 'home');
+  const dietTitle = titleCase((ob.diet_type || 'Balanced Diet').replace(/_/g, ' '));
   const cuisineTitle = ob.preferred_cuisine || ob.regional_preference || 'South Indian';
 
   // Subscores from backend fitness state
-  const subscores = data?.fitness_state ? {
-    strength: data.fitness_state.strength_score ?? undefined,
-    recovery: data.fitness_state.recovery_score ?? undefined,
-    consistency: data.fitness_state.consistency_score ?? undefined,
-    nutrition: data.fitness_state.nutrition_score ?? undefined,
-    fatigueRisk: data.fitness_state.fatigue_risk ?? undefined,
-  } : undefined;
+  const subscores = data?.fitness_state
+    ? {
+        strength: data.fitness_state.strength_score ?? undefined,
+        recovery: data.fitness_state.recovery_score ?? undefined,
+        consistency: data.fitness_state.consistency_score ?? undefined,
+        nutrition: data.fitness_state.nutrition_score ?? undefined,
+        fatigueRisk: data.fitness_state.fatigue_risk ?? undefined,
+      }
+    : undefined;
 
-  const hasRecoveryLogged = data?.recovery_summary && (
-    data.recovery_summary.sleep_hours !== undefined ||
-    data.recovery_summary.energy_level !== undefined ||
-    data.recovery_summary.recovery_score !== null
-  );
+  const hasRecoveryLogged =
+    data?.recovery_summary &&
+    (data.recovery_summary.sleep_hours !== undefined ||
+      data.recovery_summary.energy_level !== undefined ||
+      data.recovery_summary.recovery_score !== null);
 
   const exercises = data?.today_workout?.exercises || [];
   const exercisesToAvoid = ob.exercises_to_avoid || [];
 
+  // One coach quote per day
+  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+  const dailyQuote = COACH_QUOTES[dayOfYear % COACH_QUOTES.length];
+
+  const rec = data?.recovery_summary;
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-12">
-      {/* â”€â”€ ONBOARDING WIZARD MODAL (ONLY FOR NEW REGISTERED USERS) â”€â”€ */}
+    <div className="max-w-6xl mx-auto space-y-4 sm:space-y-6 pb-12">
+      {/* ── ONBOARDING WIZARD (full-screen sheet on phones, dialog on larger screens) ── */}
       {showOnboardingModal && !onboardingComplete && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="relative w-full max-w-3xl bg-dark-bg border border-dark-border rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto hide-scrollbar">
-            <button
-              onClick={() => {
-                setShowOnboardingModal(false);
-                sessionStorage.removeItem('fortis_new_registration');
-              }}
-              className="absolute top-4 right-4 z-20 w-9 h-9 rounded-xl bg-dark-card border border-dark-border text-text-muted hover:text-white flex items-center justify-center text-sm font-bold transition-all shadow-card hover:border-brand/40"
-              title="Close and explore dashboard"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="p-1 sm:p-3">
-              <Onboarding
-                isModal
-                onComplete={handleOnboardingComplete}
-                onClose={() => {
-                  setShowOnboardingModal(false);
-                  sessionStorage.removeItem('fortis_new_registration');
-                }}
-              />
-            </div>
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex sm:items-center sm:justify-center sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Fitness onboarding"
+        >
+          <div className="relative w-full h-[100dvh] sm:h-auto sm:max-w-3xl sm:max-h-[92vh] bg-dark-bg sm:border sm:border-dark-border sm:rounded-3xl sm:shadow-2xl overflow-y-auto overscroll-contain hide-scrollbar">
+            <Onboarding isModal onComplete={handleOnboardingComplete} onClose={closeOnboarding} />
           </div>
         </div>
       )}
 
-      {/* â”€â”€ NEW USER SETUP BANNER (ONLY FOR NEW REGISTERED USERS BEFORE COMPLETION) â”€â”€ */}
+      {/* ── 1. HERO BANNER ── */}
+      <section className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-brand/25 bg-dark-card">
+        <img
+          src={COACH_IMG}
+          alt=""
+          aria-hidden
+          className="absolute inset-y-0 right-0 w-full sm:w-[52%] h-full object-cover object-[50%_10%] opacity-45 sm:opacity-100"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t sm:bg-gradient-to-r from-dark-card via-dark-card/85 to-dark-card/10 sm:to-transparent" />
+        <div className="absolute inset-0 bg-radial-orange opacity-40 pointer-events-none" />
+
+        <div className="relative z-10 p-5 pt-28 sm:p-8 sm:pt-8 sm:pr-[45%]">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
+              {data?.greeting || `Welcome, ${userName}`}
+            </h1>
+            {onboardingComplete && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-success/15 text-success border border-success/30">
+                <CheckCircle2 className="w-3 h-3" />
+                Profile active
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs sm:text-sm text-text-secondary leading-relaxed max-w-md">
+            {onboardingComplete
+              ? `Calibrated for ${goalTitle} · ${locationTitle} setup · ${cuisineTitle} nutrition`
+              : 'Complete your onboarding questions to activate your personalised AI training cycle.'}
+          </p>
+
+          <p className="mt-4 text-sm sm:text-base font-semibold text-white/90 leading-snug max-w-md">
+            “{dailyQuote}”
+            <span className="block text-xs text-brand-light font-bold mt-1">Coach Fortis</span>
+          </p>
+
+          <div className="flex flex-col min-[420px]:flex-row gap-2.5 mt-5">
+            <Link
+              to="/workout"
+              className="fortis-btn-primary text-sm py-3 px-5 inline-flex items-center justify-center gap-2 shadow-glow"
+            >
+              <Dumbbell className="w-4 h-4" />
+              <span>Today's session</span>
+            </Link>
+            <Link
+              to="/coach"
+              className="fortis-btn-secondary text-sm py-3 px-5 inline-flex items-center justify-center gap-1.5"
+            >
+              <span>Ask coach</span>
+              <ArrowRight className="w-4 h-4 text-brand-light" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 2. FIRST-TIME SETUP BANNER ── */}
       {!onboardingComplete && isNewRegistration && (
-        <div className="relative overflow-hidden bg-gradient-to-r from-brand/20 via-dark-card to-dark-card border-2 border-brand/40 rounded-3xl p-6 sm:p-7 shadow-glow">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
+        <div className="relative overflow-hidden bg-gradient-to-r from-brand/20 via-dark-card to-dark-card border border-brand/40 rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-glow">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
             <div className="space-y-1.5 max-w-lg">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-brand text-white shadow-glow">
-                  First-Time Setup
-                </span>
-                <span className="text-xs text-brand-light font-semibold">AI Personalization</span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-black text-white">
-                Complete Your Fitness Onboarding
-              </h3>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Welcome, {userName}! Answer 6 quick questions so Fortis AI can generate your tailored workout schedule, exercise choices, and regional nutrition targets.
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand text-white">
+                First-time setup
+              </span>
+              <h3 className="text-lg sm:text-2xl font-black text-white">Complete your fitness onboarding</h3>
+              <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
+                Welcome, {userName}. Answer a few quick questions so Fortis can build your workout schedule, exercise choices, and
+                regional nutrition targets.
               </p>
             </div>
-
             <button
               onClick={() => setShowOnboardingModal(true)}
-              className="fortis-btn-primary inline-flex items-center gap-2 py-3 px-6 text-sm font-black tracking-wide shrink-0 shadow-glow"
+              className="fortis-btn-primary inline-flex items-center justify-center gap-2 py-3 px-6 text-sm font-bold shrink-0 shadow-glow w-full sm:w-auto"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Answer Questions</span>
+              <span>Answer questions</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* â”€â”€ 1. HEADER & ATHLETE SUMMARY â”€â”€ */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5 mb-1">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              {data?.greeting || `Welcome, ${userName}`}
-            </h1>
-            {onboardingComplete && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-success/15 text-success border border-success/30">
-                <CheckCircle2 className="w-3 h-3" />
-                Profile Active
-              </span>
-            )}
-          </div>
-          <p className="text-xs sm:text-sm text-text-secondary">
-            {onboardingComplete
-              ? `AI Continuous Adaptation: Calibrated for ${goalTitle} â€¢ ${locationTitle} Setup â€¢ ${cuisineTitle} Nutrition`
-              : 'Complete your onboarding questions to activate your personalized AI training cycle.'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Link
-            to="/workout"
-            className="fortis-btn-primary text-xs sm:text-sm py-2 px-3.5 inline-flex items-center gap-2 shadow-glow"
-          >
-            <Dumbbell className="w-4 h-4" />
-            <span>Today's Session</span>
-          </Link>
-          <Link
-            to="/coach"
-            className="fortis-btn-secondary text-xs sm:text-sm py-2 px-3.5 inline-flex items-center gap-1.5"
-          >
-            <span>Ask Coach</span>
-            <ArrowRight className="w-3.5 h-3.5 text-brand-light" />
-          </Link>
-        </div>
-      </div>
-
-      {/* â”€â”€ 2. ONBOARDING BLUEPRINT STRIP (SIMPLE & CONCISE) â”€â”€ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Goal Card */}
-        <div className="bg-dark-card border border-dark-border/80 rounded-2xl p-4 shadow-card hover:border-brand/30 transition-colors">
-          <div className="flex items-center gap-2 text-brand-light mb-1.5">
-            <Target className="w-4 h-4" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Primary Goal</span>
-          </div>
-          <h4 className="text-sm sm:text-base font-black text-white truncate">{goalTitle}</h4>
-          <p className="text-[11px] text-text-secondary mt-0.5">{experienceTitle} Level</p>
-        </div>
-
-        {/* Schedule & Location Card */}
-        <div className="bg-dark-card border border-dark-border/80 rounded-2xl p-4 shadow-card hover:border-brand/30 transition-colors">
-          <div className="flex items-center gap-2 text-indigo-400 mb-1.5">
-            <Calendar className="w-4 h-4" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Training Rhythm</span>
-          </div>
-          <h4 className="text-sm sm:text-base font-black text-white">
-            {ob.days_per_week || 3} Days / Week
-          </h4>
-          <p className="text-[11px] text-text-secondary mt-0.5 truncate">
-            {locationTitle} â€¢ {ob.workout_duration_min || 45} mins
-          </p>
-        </div>
-
-        {/* Nutrition Blueprint Card */}
-        <div className="bg-dark-card border border-dark-border/80 rounded-2xl p-4 shadow-card hover:border-brand/30 transition-colors">
-          <div className="flex items-center gap-2 text-emerald-400 mb-1.5">
-            <Utensils className="w-4 h-4" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Diet & Cuisine</span>
-          </div>
-          <h4 className="text-sm sm:text-base font-black text-white truncate">{dietTitle}</h4>
-          <p className="text-[11px] text-text-secondary mt-0.5 truncate">
-            {cuisineTitle} â€¢ â‚¹{ob.daily_budget_inr || 150}/day
-          </p>
-        </div>
-
-        {/* Recovery & Safeguards Card */}
-        <div className="bg-dark-card border border-dark-border/80 rounded-2xl p-4 shadow-card hover:border-brand/30 transition-colors">
-          <div className="flex items-center gap-2 text-amber-400 mb-1.5">
-            <ShieldCheck className="w-4 h-4" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">AI Safeguards</span>
-          </div>
-          <h4 className="text-sm sm:text-base font-black text-white truncate">
-            {exercisesToAvoid.length > 0
-              ? `${exercisesToAvoid.length} Exercises Filtered`
+      {/* ── 3. BLUEPRINT STRIP (swipeable on phones) ── */}
+      <div className="flex md:grid md:grid-cols-4 gap-3 overflow-x-auto md:overflow-visible snap-x snap-mandatory pb-1 hide-scrollbar">
+        <StatCard
+          icon={Target}
+          iconClass="text-brand-light"
+          label="Primary goal"
+          value={goalTitle}
+          sub={`${experienceTitle} level`}
+        />
+        <StatCard
+          icon={Calendar}
+          iconClass="text-indigo-400"
+          label="Training rhythm"
+          value={`${ob.days_per_week || 3} days / week`}
+          sub={`${locationTitle} · ${ob.workout_duration_min || 45} mins`}
+        />
+        <StatCard
+          icon={Utensils}
+          iconClass="text-emerald-400"
+          label="Diet & cuisine"
+          value={dietTitle}
+          sub={`${cuisineTitle} · ₹${ob.daily_budget_inr || 150}/day`}
+        />
+        <StatCard
+          icon={ShieldCheck}
+          iconClass="text-amber-400"
+          label="AI safeguards"
+          value={
+            exercisesToAvoid.length > 0
+              ? `${exercisesToAvoid.length} exercises filtered`
               : onboardingComplete
-                ? 'Baseline Assessed Â· No Restrictions Logged'
-                : 'Limitation Assessment Pending'}
-          </h4>
-          <p className="text-[11px] text-text-secondary mt-0.5 truncate">
-            {ob.injury_notes
+                ? 'No restrictions logged'
+                : 'Assessment pending'
+          }
+          sub={
+            ob.injury_notes
               ? `Note: ${ob.injury_notes}`
               : onboardingComplete
                 ? 'No movement restrictions reported'
-                : 'Complete onboarding assessment'}
-          </p>
-        </div>
+                : 'Complete onboarding assessment'
+          }
+        />
       </div>
 
-      {/* â”€â”€ 3. MAIN TRAINING & BIOMETRICS (7 COLS / 5 COLS) â”€â”€ */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* â”€â”€ LEFT: TODAY'S AI WORKOUT (TAILORED FROM ONBOARDING) â”€â”€ */}
-        <div className="lg:col-span-7 flex flex-col gap-4">
-          <div className="bg-dark-card border border-brand/30 rounded-3xl p-6 shadow-glow relative overflow-hidden flex-1 flex flex-col justify-between">
+      {/* ── 4. MAIN: WORKOUT + BIOMETRICS ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
+        {/* LEFT: today's workout */}
+        <div className="lg:col-span-7 flex flex-col">
+          <div className="bg-dark-card border border-brand/30 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-glow relative overflow-hidden flex-1 flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-64 h-64 bg-radial-orange pointer-events-none opacity-40" />
 
-            <div>
+            <div className="relative">
               {/* Header */}
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-brand/20 border border-brand/40 flex items-center justify-center text-brand-light">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-brand/20 border border-brand/40 flex items-center justify-center text-brand-light shrink-0">
                     <Dumbbell className="w-5 h-5" />
                   </div>
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-brand-light">
-                      AI Generated Workout
-                    </span>
-                    <h3 className="text-lg sm:text-xl font-black text-white">
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-brand-light">AI generated workout</span>
+                    <h3 className="text-lg sm:text-xl font-black text-white leading-tight truncate">
                       {data?.today_workout?.workout_type || `${goalTitle} Session`}
                     </h3>
                   </div>
                 </div>
-
-                <span className="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-brand/15 text-brand-light border border-brand/30">
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-brand/15 text-brand-light border border-brand/30 shrink-0">
                   {data?.today_workout?.status || 'Scheduled'}
                 </span>
               </div>
 
-              {/* Workout Details Strip */}
-              <div className="grid grid-cols-3 gap-2 py-3 px-4 bg-dark-surface/80 rounded-2xl border border-dark-border text-center mb-4">
-                <div>
-                  <span className="text-[10px] text-text-muted uppercase font-bold block">Target Duration</span>
+              {/* Details strip */}
+              <div className="grid grid-cols-3 divide-x divide-dark-border py-3 bg-dark-surface/80 rounded-2xl border border-dark-border text-center mb-4">
+                <div className="px-1">
+                  <span className="text-[11px] text-text-muted block">Duration</span>
                   <span className="text-sm font-extrabold text-white flex items-center justify-center gap-1 mt-0.5">
-                    <Clock className="w-3.5 h-3.5 text-text-muted" />
-                    {data?.today_workout?.estimated_duration_min || ob.workout_duration_min || 45} mins
+                    <Clock className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                    {data?.today_workout?.estimated_duration_min || ob.workout_duration_min || 45}m
                   </span>
                 </div>
-                <div>
-                  <span className="text-[10px] text-text-muted uppercase font-bold block">Movement Volume</span>
+                <div className="px-1">
+                  <span className="text-[11px] text-text-muted block">Volume</span>
                   <span className="text-sm font-extrabold text-brand-light flex items-center justify-center gap-1 mt-0.5">
-                    <Flame className="w-3.5 h-3.5 text-brand-light" />
-                    {exercises.length || 4} Exercises
+                    <Flame className="w-3.5 h-3.5 shrink-0" />
+                    {exercises.length || 4} moves
                   </span>
                 </div>
-                <div>
-                  <span className="text-[10px] text-text-muted uppercase font-bold block">Setup Location</span>
+                <div className="px-1 min-w-0">
+                  <span className="text-[11px] text-text-muted block">Location</span>
                   <span className="text-sm font-extrabold text-white flex items-center justify-center gap-1 mt-0.5">
-                    <Layers className="w-3.5 h-3.5 text-text-muted" />
-                    {locationTitle}
+                    <Layers className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                    <span className="truncate">{locationTitle}</span>
                   </span>
                 </div>
               </div>
 
-              {/* Safeguard pill if user specified avoidances */}
+              {/* Safeguard note */}
               {exercisesToAvoid.length > 0 && (
-                <div className="mb-4 flex items-center gap-2 bg-dark-surface/60 border border-success/30 rounded-xl p-2.5 text-xs text-text-secondary">
-                  <ShieldCheck className="w-4 h-4 text-success shrink-0" />
+                <div className="mb-4 flex items-start gap-2 bg-dark-surface/60 border border-success/30 rounded-xl p-3 text-xs text-text-secondary">
+                  <ShieldCheck className="w-4 h-4 text-success shrink-0 mt-0.5" />
                   <span>
-                    <strong className="text-success font-semibold">AI Safeguard Applied:</strong> Excluded{' '}
+                    <strong className="text-success font-semibold">AI safeguard applied:</strong> excluded{' '}
                     <span className="text-white font-medium">{exercisesToAvoid.join(', ')}</span> as requested in onboarding.
                   </span>
                 </div>
               )}
 
-              {/* Exercise Checklist */}
-              <div className="space-y-2 mb-6">
-                <div className="flex items-center justify-between text-xs font-bold text-text-muted uppercase tracking-wider px-1">
-                  <span>Planned Exercises</span>
-                  <span>Target Sets Ã— Reps</span>
+              {/* Exercise list */}
+              <div className="space-y-2 mb-5">
+                <div className="flex items-center justify-between text-xs font-semibold text-text-muted px-1">
+                  <span>Planned exercises</span>
+                  <span>Sets × reps</span>
                 </div>
 
                 {exercises.length > 0 ? (
                   exercises.slice(0, 5).map((ex: any, idx: number) => (
                     <div
                       key={ex.id || idx}
-                      className="flex items-center justify-between bg-dark-surface/90 hover:bg-dark-surface border border-dark-border/80 rounded-xl p-3 transition-colors"
+                      className="flex items-center justify-between gap-3 bg-dark-surface/90 hover:bg-dark-surface border border-dark-border/80 rounded-xl p-3 transition-colors"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="w-6 h-6 rounded-lg bg-dark-card border border-dark-border text-[11px] font-bold text-text-muted flex items-center justify-center shrink-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-7 h-7 rounded-lg bg-dark-card border border-dark-border text-xs font-bold text-text-muted flex items-center justify-center shrink-0">
                           {idx + 1}
                         </span>
-                        <div>
-                          <h5 className="text-xs sm:text-sm font-bold text-white">{ex.name}</h5>
-                          <span className="text-[10px] text-text-muted uppercase font-medium">
+                        <div className="min-w-0">
+                          <h5 className="text-sm font-bold text-white truncate">{ex.name}</h5>
+                          <span className="text-[11px] text-text-muted truncate block">
                             {ex.muscle_groups?.slice(0, 2).join(', ') || 'Compound'}
                           </span>
                         </div>
                       </div>
-
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-brand-light">
-                          {ex.planned_sets || 3} sets Ã— {ex.planned_reps || 10} reps
-                        </span>
-                      </div>
+                      <span className="text-xs font-bold text-brand-light shrink-0 whitespace-nowrap">
+                        {ex.planned_sets || 3} × {ex.planned_reps || 10}
+                      </span>
                     </div>
                   ))
                 ) : (
-                  <div className="py-4 text-center text-xs text-text-muted bg-dark-surface rounded-xl">
+                  <div className="py-4 px-3 text-center text-xs text-text-muted bg-dark-surface rounded-xl">
                     Exercises calibrated and ready in your active training block.
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Start CTA */}
             <Link
               to="/workout"
-              className="fortis-btn-primary w-full py-3.5 text-center flex items-center justify-center gap-2 text-sm font-black tracking-wide shadow-glow"
+              className="relative fortis-btn-primary w-full py-3.5 text-center flex items-center justify-center gap-2 text-sm font-bold shadow-glow"
             >
               <Zap className="w-4 h-4 fill-white" />
-              <span>START TODAY'S WORKOUT & LOG RPE</span>
+              <span>Start workout & log RPE</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>
 
-        {/* â”€â”€ RIGHT: PULSE, DECISION & SCAN â”€â”€ */}
+        {/* RIGHT: pulse, decision, scan */}
         <div className="lg:col-span-5 flex flex-col gap-4">
-          {/* Signature Metric: Fortis Pulse */}
-          <div className="bg-dark-card border border-dark-border rounded-3xl p-6 shadow-card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-black text-brand-light tracking-wider uppercase">Signature Biometric</span>
-              <span className="text-[11px] text-text-muted">Real-time Adaptation</span>
+          <Panel>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <span className="text-sm font-bold text-white">Fortis Pulse</span>
+              <span className="text-[11px] text-text-muted">Real-time adaptation</span>
             </div>
             <FortisPulse score={data?.fortis_pulse ?? null} subscores={subscores} />
-          </div>
+          </Panel>
 
-          {/* Today's Decision Recommendation */}
           {data?.today_decision ? (
             <FortisDecision decision={data.today_decision} />
           ) : (
-            <div className="bg-dark-card border border-dark-border rounded-2xl p-5 shadow-card flex items-start gap-3">
+            <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-5 shadow-card flex items-start gap-3">
               <Activity className="w-5 h-5 text-brand-light shrink-0 mt-0.5" />
               <div>
-                <h4 className="font-bold text-sm text-white">Daily Decision Calibrated</h4>
+                <h4 className="font-bold text-sm text-white">Daily decision calibrated</h4>
                 <p className="text-xs text-text-secondary mt-1 leading-relaxed">
                   Train with standard progressive overload. Your starter session is built for {locationTitle} equipment.
                 </p>
@@ -430,148 +473,108 @@ export const Dashboard: React.FC = () => {
             </div>
           )}
 
-          {/* Movement Scan Shortcut */}
-          <div className="bg-dark-card border border-dark-border rounded-2xl p-5 shadow-card">
-            <div className="flex items-center justify-between mb-2">
+          <Panel className="!p-4 sm:!p-5 !rounded-2xl">
+            <div className="flex items-center justify-between gap-3 mb-2">
               <div className="flex items-center gap-2">
                 <ScanLine className="w-4 h-4 text-brand-light" />
-                <h4 className="text-sm font-bold text-white">Fortis Movement Scan</h4>
+                <h4 className="text-sm font-bold text-white">Movement scan</h4>
               </div>
-              <span className="text-[10px] font-bold text-text-muted uppercase">Vision AI</span>
+              <span className="text-[11px] text-text-muted">Vision AI</span>
             </div>
             <p className="text-xs text-text-secondary mb-3 leading-relaxed">
               {latestScan
-                ? `Latest Scan Quality: ${Math.round(latestScan.movement_quality)}% (Mobility: ${Math.round(latestScan.mobility_score)}%)`
-                : '30-second camera squat analysis to check mobility, symmetry, and joint kinetic alignment.'}
+                ? `Latest scan quality: ${Math.round(latestScan.movement_quality)}% (mobility ${Math.round(latestScan.mobility_score)}%)`
+                : '30-second camera squat analysis to check mobility, symmetry, and joint alignment.'}
             </p>
             <Link
               to={latestScan ? '/scan/result' : '/scan'}
-              className="fortis-btn-secondary w-full py-2 text-center text-xs font-bold block"
+              className="fortis-btn-secondary w-full py-2.5 text-center text-xs font-bold block"
             >
-              {latestScan ? 'View Scan Blueprint â†’' : 'Start Camera Scan â†’'}
+              {latestScan ? 'View scan blueprint →' : 'Start camera scan →'}
             </Link>
-          </div>
+          </Panel>
         </div>
       </div>
 
-      {/* â”€â”€ 4. SECONDARY ROW: NUTRITION & RECOVERY SUMMARIES â”€â”€ */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Nutrition Snapshot */}
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-5 shadow-card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Utensils className="w-4 h-4 text-emerald-400" />
-              <h3 className="font-bold text-sm text-white">Regional Nutrition Blueprint</h3>
-            </div>
-            <Link to="/nutrition" className="text-xs text-brand-light font-semibold hover:underline">
-              Manage â†’
-            </Link>
-          </div>
-
-          <div className="space-y-3 text-sm">
-            <div>
-              <div className="flex justify-between text-xs mb-1 text-text-secondary">
-                <span>Calories ({data?.nutrition_summary?.total_calories ?? 0} / {data?.nutrition_summary?.target_calories ?? 2200} kcal)</span>
-                <span>{data?.nutrition_summary?.calories_pct ?? 0}%</span>
+      {/* ── 5. NUTRITION & RECOVERY ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+        <Panel>
+          <PanelHeader icon={Utensils} iconClass="text-emerald-400" title="Regional nutrition blueprint" to="/nutrition" action="Manage" />
+          <div className="space-y-4">
+            <Bar
+              label={`Calories (${data?.nutrition_summary?.total_calories ?? 0} / ${data?.nutrition_summary?.target_calories ?? 2200} kcal)`}
+              right={`${data?.nutrition_summary?.calories_pct ?? 0}%`}
+              pct={data?.nutrition_summary?.calories_pct ?? 0}
+              barClass="bg-emerald-500"
+            />
+            <Bar
+              label={`Protein (${data?.nutrition_summary?.total_protein_g ?? 0}g / 150g)`}
+              right={`${data?.nutrition_summary?.protein_pct ?? 0}%`}
+              pct={data?.nutrition_summary?.protein_pct ?? 0}
+              barClass="bg-brand"
+            />
+            <div className="p-3 bg-dark-surface rounded-xl flex items-center justify-between gap-3 text-xs">
+              <div className="min-w-0">
+                <span className="text-text-muted block text-[11px]">Cuisine & diet</span>
+                <span className="text-white font-semibold block truncate">
+                  {cuisineTitle} · {dietTitle}
+                </span>
               </div>
-              <div className="w-full bg-dark-border h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-emerald-500 h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, data?.nutrition_summary?.calories_pct ?? 0)}%` }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between text-xs mb-1 text-text-secondary">
-                <span>Protein ({data?.nutrition_summary?.total_protein_g ?? 0}g / 150g)</span>
-                <span>{data?.nutrition_summary?.protein_pct ?? 0}%</span>
-              </div>
-              <div className="w-full bg-dark-border h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-brand h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, data?.nutrition_summary?.protein_pct ?? 0)}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="p-3 bg-dark-surface rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="text-text-muted block text-[10px] uppercase font-bold">Cuisine & Diet</span>
-                <span className="text-white font-semibold">{cuisineTitle} â€¢ {dietTitle}</span>
-              </div>
-              <div className="text-right">
-                <span className="text-text-muted block text-[10px] uppercase font-bold">Daily Budget</span>
+              <div className="text-right shrink-0">
+                <span className="text-text-muted block text-[11px]">Daily budget</span>
                 <span className="font-bold text-emerald-400">
-                  â‚¹{data?.nutrition_summary?.budget_remaining_inr ?? ob.daily_budget_inr ?? 150}
+                  ₹{data?.nutrition_summary?.budget_remaining_inr ?? ob.daily_budget_inr ?? 150}
                 </span>
               </div>
             </div>
           </div>
-        </div>
+        </Panel>
 
-        {/* Recovery Snapshot */}
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-5 shadow-card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Moon className="w-4 h-4 text-indigo-400" />
-              <h3 className="font-bold text-sm text-white">Recovery & Lifestyle Baseline</h3>
-            </div>
-            <Link to="/recovery" className="text-xs text-brand-light font-semibold hover:underline">
-              Log Details â†’
-            </Link>
-          </div>
+        <Panel>
+          <PanelHeader icon={Moon} iconClass="text-indigo-400" title="Recovery & lifestyle baseline" to="/recovery" action="Log details" />
 
           {hasRecoveryLogged ? (
-            <div className="grid grid-cols-3 gap-2 my-3">
-              <div className="p-3 bg-dark-surface rounded-xl text-center">
-                <span className="text-[10px] text-text-muted uppercase font-bold block">Score</span>
-                <span className="text-base font-extrabold text-success">
-                  {data?.recovery_summary?.recovery_score !== undefined && data.recovery_summary.recovery_score !== null
-                    ? `${Math.round(data.recovery_summary.recovery_score)}%`
-                    : 'â€”'}
-                </span>
-              </div>
-              <div className="p-3 bg-dark-surface rounded-xl text-center">
-                <span className="text-[10px] text-text-muted uppercase font-bold block">Sleep</span>
-                <span className="text-base font-extrabold text-white">
-                  {data?.recovery_summary?.sleep_hours !== undefined && data.recovery_summary.sleep_hours !== null
-                    ? `${data.recovery_summary.sleep_hours}h`
-                    : 'â€”'}
-                </span>
-              </div>
-              <div className="p-3 bg-dark-surface rounded-xl text-center">
-                <span className="text-[10px] text-text-muted uppercase font-bold block">Energy</span>
-                <span className="text-base font-extrabold text-brand-light">
-                  {data?.recovery_summary?.energy_level !== undefined && data.recovery_summary.energy_level !== null
-                    ? `${data.recovery_summary.energy_level}/10`
-                    : 'â€”'}
-                </span>
-              </div>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <MiniStat
+                label="Score"
+                valueClass="text-success"
+                value={
+                  rec?.recovery_score !== undefined && rec.recovery_score !== null ? `${Math.round(rec.recovery_score)}%` : '—'
+                }
+              />
+              <MiniStat
+                label="Sleep"
+                value={rec?.sleep_hours !== undefined && rec.sleep_hours !== null ? `${rec.sleep_hours}h` : '—'}
+              />
+              <MiniStat
+                label="Energy"
+                valueClass="text-brand-light"
+                value={rec?.energy_level !== undefined && rec.energy_level !== null ? `${rec.energy_level}/10` : '—'}
+              />
             </div>
           ) : (
-            <div className="my-3 p-3.5 bg-dark-surface rounded-xl flex items-center justify-between">
+            <div className="mb-3 p-3.5 bg-dark-surface rounded-xl flex flex-col min-[420px]:flex-row min-[420px]:items-center justify-between gap-3">
               <div>
-                <span className="text-xs font-semibold text-white block">Sleep & Energy Baseline Active</span>
+                <span className="text-xs font-semibold text-white block">Sleep & energy baseline active</span>
                 <p className="text-[11px] text-text-muted mt-0.5">
                   Calibrated for {ob.workout_duration_min || 45}m sessions. Log daily sleep to adapt training load.
                 </p>
               </div>
-              <Link to="/recovery" className="fortis-btn-secondary py-1.5 px-3 text-xs shrink-0 ml-2">
-                Log Recovery
+              <Link to="/recovery" className="fortis-btn-secondary py-2 px-3 text-xs shrink-0 text-center">
+                Log recovery
               </Link>
             </div>
           )}
 
-          <div className="text-xs text-text-secondary flex items-start gap-2 bg-dark-surface p-2.5 rounded-xl">
+          <div className="text-xs text-text-secondary flex items-start gap-2 bg-dark-surface p-3 rounded-xl">
             <Info className="w-4 h-4 text-brand-light shrink-0 mt-0.5" />
-            <span>
+            <span className="min-w-0 break-words">
               {ob.injury_notes
-                ? `AI Caution active: "${ob.injury_notes}". Training intensity is adapted to prevent strain.`
+                ? `AI caution active: "${ob.injury_notes}". Training intensity is adapted to prevent strain.`
                 : 'Adaptive fatigue prediction recalibrates automatically when recovery logs are added.'}
             </span>
           </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ class Profile(Base):
     exercises_to_avoid = Column(JSON)            # list[str]
     preferred_exercise_types = Column(JSON)      # list[str]
     strength_benchmarks = Column(JSON)           # {squat_kg, bench_kg, …}
+    avatar_url = Column(String, nullable=True)   # profile image URL / path
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

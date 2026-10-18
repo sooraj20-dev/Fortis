@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from './layouts/AppLayout';
 import SplashScreen from './components/SplashScreen';
@@ -16,6 +16,7 @@ const RecoveryPage   = lazy(() => import('./pages/app/Recovery'));
 const ProgressPage   = lazy(() => import('./pages/app/Progress'));
 const VisionPage     = lazy(() => import('./pages/app/Vision'));
 const CoachPage      = lazy(() => import('./pages/app/Coach'));
+const ProfilePage    = lazy(() => import('./pages/app/Profile'));
 const ScanOnboarding = lazy(() => import('./pages/app/scan/ScanOnboarding'));
 const ScanCamera     = lazy(() => import('./pages/app/scan/ScanCamera'));
 const ScanProcessing = lazy(() => import('./pages/app/scan/ScanProcessing'));
@@ -173,6 +174,16 @@ function App() {
               <RequireOnboarding>
                 <AppLayout>
                   <CoachPage />
+                </AppLayout>
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireOnboarding>
+                <AppLayout>
+                  <ProfilePage />
                 </AppLayout>
               </RequireOnboarding>
             }

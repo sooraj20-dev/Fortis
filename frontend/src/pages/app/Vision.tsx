@@ -1,499 +1,514 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Video,
-  Camera,
-  Upload,
-  CheckCircle,
-  AlertTriangle,
-  Award,
-  Sparkles,
-  Info,
-  Leaf,
-  X,
-  ImageIcon,
+  Camera, Upload, CheckCircle, AlertTriangle, Award, Sparkles, Info, Leaf, X,
+  Utensils, Activity, Clipboard, Minus, Plus, Video, RotateCcw, Target,
 } from 'lucide-react';
 import api from '../../services/api';
 
+type Tab = 'food' | 'form';
+
+const EXERCISES = [
+  { id: 'squat', name: 'Squat', hint: 'Depth & knee tracking' },
+  { id: 'pushup', name: 'Push-up', hint: 'Body line & elbow angle' },
+  { id: 'curl', name: 'Bicep curl', hint: 'Elbow pinning & range' },
+];
+const MEALS = ['Breakfast', 'Lunch', 'Snack', 'Dinner'];
+const pct = (v: number) => `${Math.round((v || 0) * 100)}%`;
+const num = (v: any) => (typeof v === 'number' ? v : parseFloat(v) || 0);
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+// Animated count-up for scores
+function useCountUp(target: number, ms = 900) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    let raf = 0; const t0 = performance.now();
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / ms);
+      setV(Math.round(target * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return v;
+}
+
+// ─── Viewfinder: corner brackets + scan line while analysing ──
+function Viewfinder({ children, scanning, active, className = '' }: {
+  children: React.ReactNode; scanning?: boolean; active?: boolean; className?: string;
+}) {
+  const c = `absolute w-6 h-6 border-brand transition-all duration-300 ${active ? 'scale-110' : ''}`;
+  return (
+    <div className={`relative ${className}`}>
+      <span className={`${c} top-0 left-0 border-t-2 border-l-2 rounded-tl-xl`} />
+      <span className={`${c} top-0 right-0 border-t-2 border-r-2 rounded-tr-xl`} />
+      <span className={`${c} bottom-0 left-0 border-b-2 border-l-2 rounded-bl-xl`} />
+      <span className={`${c} bottom-0 right-0 border-b-2 border-r-2 rounded-br-xl`} />
+      <div className="relative m-2 rounded-lg overflow-hidden">
+        {children}
+        {scanning && (
+          <>
+            <div className="absolute inset-0 bg-brand/5 pointer-events-none" />
+            <div className="absolute inset-x-0 h-16 bg-gradient-to-b from-transparent via-brand/40 to-transparent pointer-events-none"
+              style={{ animation: 'vscan 1.6s ease-in-out infinite' }} />
+          </>
+        )}
+      </div>
+      <style>{`@keyframes vscan{0%{top:-4rem}100%{top:100%}}@media (prefers-reduced-motion:reduce){[style*="vscan"]{animation:none!important}}`}</style>
+    </div>
+  );
+}
+
+// ─── Macro donut ──────────────────────────────────────────────
+function MacroDonut({ p, c, f, kcal }: { p: number; c: number; f: number; kcal: number }) {
+  const parts = [
+    { k: 'Protein', g: p, cal: p * 4, color: '#f97316' },
+    { k: 'Carbs', g: c, cal: c * 4, color: '#10b981' },
+    { k: 'Fat', g: f, cal: f * 9, color: '#f59e0b' },
+  ];
+  const total = parts.reduce((a, x) => a + x.cal, 0) || 1;
+  const r = 52, circ = 2 * Math.PI * r;
+  const [hover, setHover] = useState<string | null>(null);
+  let acc = 0;
+  const shown = parts.find((x) => x.k === hover);
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-5">
+      <div className="relative w-36 h-36 shrink-0">
+        <svg viewBox="0 0 130 130" className="w-full h-full -rotate-90">
+          <circle cx="65" cy="65" r={r} fill="none" stroke="#1e1e2e" strokeWidth="14" />
+          {parts.map((x) => {
+            const len = (x.cal / total) * circ;
+            const el = (
+              <circle key={x.k} cx="65" cy="65" r={r} fill="none" stroke={x.color}
+                strokeWidth={hover === x.k ? 18 : 14}
+                strokeDasharray={`${Math.max(0, len - 3)} ${circ}`} strokeDashoffset={-acc}
+                style={{ transition: 'all 0.5s ease', opacity: hover && hover !== x.k ? 0.35 : 1 }}
+                onMouseEnter={() => setHover(x.k)} onMouseLeave={() => setHover(null)} />
+            );
+            acc += len;
+            return el;
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-2xl font-black text-white tabular-nums">{shown ? `${Math.round((shown.cal / total) * 100)}%` : Math.round(kcal)}</span>
+          <span className="text-[11px] text-text-muted">{shown ? shown.k : 'kcal'}</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 sm:grid-cols-1 gap-2 flex-1 w-full">
+        {parts.map((x) => (
+          <button key={x.k} onMouseEnter={() => setHover(x.k)} onMouseLeave={() => setHover(null)}
+            onFocus={() => setHover(x.k)} onBlur={() => setHover(null)}
+            className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-dark-card border border-dark-border hover:border-brand/40 transition text-left">
+            <span className="flex items-center gap-2 text-xs text-text-secondary">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: x.color }} />{x.k}
+            </span>
+            <span className="text-sm font-black text-white tabular-nums">{round1(x.g)}g</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Score ring ───────────────────────────────────────────────
+function ScoreRing({ score }: { score: number }) {
+  const shown = useCountUp(score);
+  const r = 58, circ = 2 * Math.PI * r;
+  const color = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+  return (
+    <div className="relative w-40 h-40 mx-auto">
+      <svg viewBox="0 0 140 140" className="w-full h-full -rotate-90">
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#1e1e2e" strokeWidth="10" />
+        <circle cx="70" cy="70" r={r} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
+          strokeDasharray={circ} strokeDashoffset={circ - (shown / 100) * circ} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-4xl font-black text-white tabular-nums">{shown}</span>
+        <span className="text-[11px] text-text-muted">form score</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────
 export const VisionPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'form' | 'food'>('form');
-  const [selectedExercise, setSelectedExercise] = useState('squat');
+  const [tab, setTab] = useState<Tab>('food');
   const [analyzing, setAnalyzing] = useState(false);
-  const [formResult, setFormResult] = useState<any>(null);
+
+  // food
   const [foodResult, setFoodResult] = useState<any>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [foodError, setFoodError] = useState<string | null>(null);
   const [foodPreview, setFoodPreview] = useState<string | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [portion, setPortion] = useState(1);
+  const [meal, setMeal] = useState('Lunch');
+  const [logged, setLogged] = useState(false);
 
-  const videoInputRef = useRef<HTMLInputElement>(null);
-  const foodInputRef = useRef<HTMLInputElement>(null);
+  // form
+  const [exercise, setExercise] = useState('squat');
+  const [formResult, setFormResult] = useState<any>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string | null>(null);
+  const [videoDrag, setVideoDrag] = useState(false);
+  const [openMetric, setOpenMetric] = useState<string | null>(null);
+  const [lastVideo, setLastVideo] = useState<File | null>(null);
 
-  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const foodInput = useRef<HTMLInputElement>(null);
+  const videoInput = useRef<HTMLInputElement>(null);
 
-    setAnalyzing(true);
-    setFormError(null);
-    setFormResult(null);
+  // revoke blob URLs on change/unmount
+  useEffect(() => () => { if (foodPreview) URL.revokeObjectURL(foodPreview); }, [foodPreview]);
+  useEffect(() => () => { if (videoPreview) URL.revokeObjectURL(videoPreview); }, [videoPreview]);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('exercise_name', selectedExercise);
-
+  const analyseFood = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/')) { setFoodError('That file is not an image. Upload a JPG, PNG or WebP photo.'); return; }
+    setAnalyzing(true); setFoodError(null); setFoodResult(null); setLogged(false); setPortion(1);
+    setFoodPreview(URL.createObjectURL(file));
+    const fd = new FormData(); fd.append('file', file);
     try {
-      const res = await api.post('/api/vision/exercise', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setFormResult(res.data);
-    } catch (err: any) {
-      setFormError(
-        err?.response?.data?.detail ||
-          'Failed to analyze exercise video. Please ensure a valid video file is uploaded.'
-      );
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  const processFoodFile = async (file: File) => {
-    setAnalyzing(true);
-    setFoodError(null);
-    setFoodResult(null);
-
-    // Show preview immediately
-    const previewUrl = URL.createObjectURL(file);
-    setFoodPreview(previewUrl);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await api.post('/api/vision/food', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const res = await api.post('/api/vision/food', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setFoodResult(res.data);
     } catch (err: any) {
-      setFoodError(
-        err?.response?.data?.detail ||
-          'Failed to classify food photograph. Please upload a clear JPG/PNG image.'
-      );
-    } finally {
-      setAnalyzing(false);
-    }
-  };
+      setFoodError(err?.response?.data?.detail || 'Could not classify this photo. Try a clearer, well-lit image.');
+    } finally { setAnalyzing(false); }
+  }, []);
 
-  const handleFoodUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await processFoodFile(file);
-  };
+  const analyseVideo = useCallback(async (file: File, ex = exercise) => {
+    if (!file.type.startsWith('video/')) { setFormError('That file is not a video. Upload an MP4, MOV or WebM clip.'); return; }
+    setAnalyzing(true); setFormError(null); setFormResult(null); setOpenMetric(null);
+    setVideoPreview(URL.createObjectURL(file)); setLastVideo(file);
+    const fd = new FormData(); fd.append('file', file); fd.append('exercise_name', ex);
+    try {
+      const res = await api.post('/api/vision/exercise', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setFormResult(res.data);
+    } catch (err: any) {
+      setFormError(err?.response?.data?.detail || 'Could not analyse this video. Check that it is a valid clip showing the full movement.');
+    } finally { setAnalyzing(false); }
+  }, [exercise]);
 
-  const handleDrop = useCallback(
-    async (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setIsDragOver(false);
-      const file = e.dataTransfer.files?.[0];
-      if (file && file.type.startsWith('image/')) {
-        await processFoodFile(file);
-      }
-    },
-    []
-  );
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = () => setIsDragOver(false);
+  // Paste an image straight into the Food tab
+  useEffect(() => {
+    if (tab !== 'food') return;
+    const onPaste = (e: ClipboardEvent) => {
+      const f = Array.from(e.clipboardData?.files || []).find((x) => x.type.startsWith('image/'));
+      if (f) analyseFood(f);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [tab, analyseFood]);
 
   const clearFood = () => {
-    setFoodResult(null);
-    setFoodError(null);
-    setFoodPreview(null);
-    if (foodInputRef.current) foodInputRef.current.value = '';
+    setFoodResult(null); setFoodError(null); setFoodPreview(null); setLogged(false); setPortion(1);
+    if (foodInput.current) foodInput.current.value = '';
+  };
+  const clearVideo = () => {
+    setFormResult(null); setFormError(null); setVideoPreview(null); setLastVideo(null);
+    if (videoInput.current) videoInput.current.value = '';
   };
 
-  const confidencePct = (v: number) => `${Math.round(v * 100)}%`;
+  const n = foodResult?.nutrition_estimate;
+  const top = foodResult?.top_prediction;
+  const scaled = (v: any) => round1(num(v) * portion);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Fortis Vision</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Pose estimation joint kinematics analysis &amp; AI-powered food recognition with nutritional analysis.
-        </p>
+        <h1 className="text-3xl sm:text-4xl font-black text-white">Fortis Vision</h1>
+        <p className="text-sm text-text-secondary mt-1">Point, snap or drop. Identify a meal and its nutrition, or check your lifting form.</p>
       </div>
 
-      {/* Mode Tabs */}
-      <div className="flex gap-2 border-b border-dark-border pb-2">
-        <button
-          onClick={() => setActiveTab('form')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            activeTab === 'form'
-              ? 'bg-brand text-white shadow-glow'
-              : 'text-text-secondary hover:text-white hover:bg-dark-hover'
-          }`}
-        >
-          Exercise Form Pose Analysis
-        </button>
-        <button
-          onClick={() => setActiveTab('food')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            activeTab === 'food'
-              ? 'bg-brand text-white shadow-glow'
-              : 'text-text-secondary hover:text-white hover:bg-dark-hover'
-          }`}
-        >
-          Food Vision AI
-        </button>
+      {/* Sliding segmented switch */}
+      <div role="tablist" className="relative grid grid-cols-2 p-1 rounded-2xl bg-dark-card border border-dark-border max-w-md">
+        <span className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-brand shadow-glow transition-transform duration-300"
+          style={{ transform: tab === 'food' ? 'translateX(0)' : 'translateX(100%)' }} />
+        {([['food', 'Food Vision', Utensils], ['form', 'Form Check', Activity]] as const).map(([id, label, Icon]) => (
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+            className={`relative z-10 flex items-center justify-center gap-2 py-2.5 text-sm font-bold transition-colors ${tab === id ? 'text-white' : 'text-text-secondary hover:text-white'}`}>
+            <Icon className="w-4 h-4" />{label}
+          </button>
+        ))}
       </div>
 
-      {/* ── Exercise Form Tab ─────────────────────────────────────────── */}
-      {activeTab === 'form' ? (
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-card space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="fortis-label">Select Exercise Model</label>
-              <select
-                value={selectedExercise}
-                onChange={(e) => setSelectedExercise(e.target.value)}
-                className="fortis-input"
-              >
-                <option value="squat">Bodyweight / Barbell Squat (Depth &amp; Knee Track)</option>
-                <option value="pushup">Push-up (Body Alignment &amp; Elbow Angle)</option>
-                <option value="curl">Bicep Curl (Elbow Pinning &amp; ROM)</option>
-              </select>
-            </div>
+      {/* ───────────────────── FOOD ───────────────────── */}
+      {tab === 'food' && (
+        <div className="space-y-5 animate-fade-in">
+          <input ref={foodInput} type="file" accept="image/*" capture="environment" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) analyseFood(f); }} />
 
-            <div className="flex items-end">
-              <input
-                ref={videoInputRef}
-                type="file"
-                accept="video/*"
-                onChange={handleVideoUpload}
-                className="hidden"
-              />
-              <button
-                onClick={() => videoInputRef.current?.click()}
-                disabled={analyzing}
-                className="fortis-btn-primary w-full py-2.5 flex items-center justify-center gap-2"
-              >
-                <Upload className="w-4 h-4" />
-                <span>{analyzing ? 'Analyzing with Gemini Flash...' : 'Upload Video File for Analysis'}</span>
-              </button>
-            </div>
-          </div>
-
-          {formError && (
-            <div className="p-3 bg-danger/10 border border-danger/30 rounded-xl text-danger text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          {formResult && (
-            <div className="bg-dark-surface border border-brand/30 rounded-xl p-5 space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-border pb-4">
-                <div>
-                  <span className="text-xs font-semibold text-brand-light uppercase tracking-wider">
-                    Evaluation Result
-                  </span>
-                  <h3 className="text-xl font-bold text-white capitalize">
-                    {formResult.exercise} Biomechanics
-                  </h3>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <span className="text-xs text-text-muted block">Form Score</span>
-                    <span className="text-2xl font-black text-success">
-                      {formResult.form_score} / 100
-                    </span>
-                    {formResult.confidence != null && (
-                      <span className="block text-[10px] text-text-muted">
-                        {confidencePct(formResult.confidence)} assessment confidence
-                      </span>
-                    )}
-                  </div>
-                  <Award className="w-8 h-8 text-success" />
-                </div>
-              </div>
-
-              {/* Subscores Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                {Object.entries(formResult.breakdown || {}).map(([k, v]: [string, any]) => (
-                  <div key={k} className="p-3 bg-dark-card rounded-lg border border-dark-border">
-                    <span className="text-text-muted capitalize block">{k.replace('_', ' ')}</span>
-                    <span className="text-lg font-bold text-white">{v}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Feedback */}
-              <div className="space-y-2 text-xs">
-                <h4 className="font-bold text-text-secondary uppercase tracking-wider">
-                  Gemini Flash Form Feedback
-                </h4>
-                {formResult.feedback?.map((f: string, i: number) => (
-                  <div key={i} className="flex items-start gap-2 text-gray-300">
-                    <span>{f}</span>
-                  </div>
-                ))}
-              </div>
-
-              {formResult.primary_improvement && (
-                <div className="p-3 bg-dark-card border border-brand/20 rounded-lg text-xs text-text-secondary">
-                  <span className="font-semibold text-brand-light block mb-0.5">
-                    Primary Target for Form Correction:
-                  </span>
-                  {formResult.primary_improvement}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* ── Food Vision Tab ────────────────────────────────────────────── */
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-card space-y-6">
-
-          {/* Upload / Drop Zone */}
           {!foodPreview ? (
-            <div
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className={`border-2 border-dashed rounded-xl p-10 text-center space-y-3 transition-colors cursor-pointer ${
-                isDragOver
-                  ? 'border-brand bg-brand/5'
-                  : 'border-dark-border hover:border-brand/40'
-              }`}
-              onClick={() => foodInputRef.current?.click()}
-            >
-              <div className="w-14 h-14 rounded-full bg-dark-surface border border-dark-border flex items-center justify-center mx-auto text-brand-light">
-                {isDragOver ? <Sparkles className="w-7 h-7" /> : <Camera className="w-7 h-7" />}
-              </div>
-              <h3 className="font-bold text-white text-base">
-                {isDragOver ? 'Drop image to analyze' : 'Upload or Drop Food Photograph'}
-              </h3>
-              <p className="text-xs text-text-muted max-w-sm mx-auto">
-                Powered by Gemini Flash vision. Supports Indian, Kerala, and global cuisine.
-                Works with any food photo — rice, curry, snacks, beverages.
-              </p>
-              <input
-                ref={foodInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFoodUpload}
-                className="hidden"
-              />
-              <button
-                disabled={analyzing}
-                className="fortis-btn-secondary text-xs py-2 px-5 inline-flex items-center gap-2"
-                onClick={(e) => { e.stopPropagation(); foodInputRef.current?.click(); }}
+            <Viewfinder active={dragOver}>
+              <div
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) analyseFood(f); }}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onClick={() => foodInput.current?.click()}
+                role="button" tabIndex={0}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && foodInput.current?.click()}
+                className={`cursor-pointer text-center px-6 py-14 space-y-4 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${dragOver ? 'bg-brand/10' : 'bg-dark-card hover:bg-dark-hover'}`}
               >
-                <Upload className="w-4 h-4" />
-                <span>Select Image File</span>
-              </button>
-              <p className="text-[11px] text-text-muted">JPEG · PNG · WebP · max 10 MB</p>
-            </div>
-          ) : (
-            /* ── Image Preview + Result ─────────────────────────────── */
-            <div className="space-y-4">
-              {/* Preview header row */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-text-secondary">
-                  <ImageIcon className="w-4 h-4" />
-                  <span>Uploaded food image</span>
+                <div className={`w-16 h-16 mx-auto rounded-full bg-dark-surface border flex items-center justify-center text-brand-light transition-all ${dragOver ? 'border-brand scale-110' : 'border-dark-border'}`}>
+                  {dragOver ? <Sparkles className="w-8 h-8" /> : <Camera className="w-8 h-8" />}
                 </div>
-                <button
-                  onClick={clearFood}
-                  className="text-xs text-text-muted hover:text-white flex items-center gap-1 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" /> Clear &amp; upload new
+                <h3 className="text-lg font-black text-white">{dragOver ? 'Release to scan' : 'Snap or drop your meal'}</h3>
+                <p className="text-xs text-text-muted max-w-sm mx-auto">Works with Indian, Kerala and global food: rice, curries, snacks, drinks.</p>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  <button onClick={(e) => { e.stopPropagation(); foodInput.current?.click(); }} className="fortis-btn-primary text-xs py-2 px-5 inline-flex items-center gap-2">
+                    <Upload className="w-4 h-4" />Choose photo
+                  </button>
+                  <span className="text-[11px] text-text-muted inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dark-border">
+                    <Clipboard className="w-3.5 h-3.5" />or paste with Ctrl/⌘ + V
+                  </span>
+                </div>
+                <p className="text-[11px] text-text-muted">JPEG, PNG or WebP, up to 10 MB</p>
+              </div>
+            </Viewfinder>
+          ) : (
+            <div className="space-y-3">
+              <Viewfinder scanning={analyzing}>
+                <img src={foodPreview} alt="Your meal" className="w-full max-h-80 object-cover bg-dark-surface" />
+                {analyzing && (
+                  <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg/80 border border-brand/30 text-xs text-text-secondary">
+                    <div className="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                    Identifying food and estimating nutrition…
+                  </div>
+                )}
+              </Viewfinder>
+              <div className="flex justify-end">
+                <button onClick={clearFood} className="text-xs text-text-muted hover:text-white flex items-center gap-1 transition-colors">
+                  <X className="w-3.5 h-3.5" />Scan a different photo
                 </button>
               </div>
-
-              {/* Image Preview */}
-              <div className="rounded-xl overflow-hidden border border-dark-border max-h-72 flex items-center justify-center bg-dark-surface">
-                <img
-                  src={foodPreview}
-                  alt="Food preview"
-                  className="max-h-72 object-contain w-full"
-                />
-              </div>
-
-              {/* Analyzing spinner */}
-              {analyzing && (
-                <div className="flex items-center gap-3 p-4 bg-dark-surface border border-brand/20 rounded-xl">
-                  <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm text-text-secondary">
-                    Analyzing with Gemini Flash — identifying food and estimating nutrition...
-                  </span>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Error */}
           {foodError && (
-            <div className="p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{foodError}</span>
-              </div>
-              <button
-                onClick={() => {
-                  setFoodError(null);
-                  foodInputRef.current?.click();
-                }}
-                className="fortis-btn-secondary py-1.5 px-3 text-xs self-start sm:self-auto shrink-0"
-              >
-                Try Again
-              </button>
+            <div role="alert" className="p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-xs flex items-center justify-between gap-3">
+              <span className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />{foodError}</span>
+              <button onClick={() => foodInput.current?.click()} className="fortis-btn-secondary py-1.5 px-3 text-xs shrink-0">Try again</button>
             </div>
           )}
 
-          {/* Result Card */}
           {foodResult && !analyzing && (
-            <div className="bg-dark-surface border border-emerald-500/30 rounded-xl p-5 space-y-4">
-
-              {/* Top Prediction */}
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-dark-border pb-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
-                      Gemini Flash Identified
-                    </span>
-                    {foodResult.top_prediction?.is_healthy === true && (
-                      <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">
-                        <Leaf className="w-3 h-3" /> Healthy
-                      </span>
-                    )}
-                    {foodResult.top_prediction?.is_healthy === false && (
-                      <span className="text-[10px] font-semibold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded-full">
-                        Indulgent
-                      </span>
-                    )}
+            <div className="bg-dark-card border border-brand/20 rounded-2xl p-5 space-y-5 shadow-glow animate-slide-up">
+              {/* Identification */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {top?.is_healthy === true && <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full"><Leaf className="w-3 h-3" />Healthy</span>}
+                    {top?.is_healthy === false && <span className="text-[11px] font-semibold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full">Indulgent</span>}
+                    {top?.region && <span className="text-[11px] text-text-muted">{top.region} cuisine</span>}
                   </div>
-                  <h3 className="text-xl font-bold text-white">
-                    {foodResult.top_prediction?.name}
-                  </h3>
-                  <div className="flex items-center gap-3 text-xs text-text-muted">
-                    <span>{foodResult.top_prediction?.region} Cuisine</span>
-                    <span className="text-dark-border">·</span>
-                    <span className="text-emerald-400 font-semibold">
-                      {confidencePct(foodResult.top_prediction?.confidence || 0)} confidence
-                    </span>
+                  <h2 className="text-2xl font-black text-white leading-tight">{top?.name}</h2>
+                  {top?.note && <p className="text-xs text-text-secondary italic">{top.note}</p>}
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="w-32 h-1.5 rounded-full bg-dark-border overflow-hidden">
+                      <div className="h-full bg-emerald-400 rounded-full transition-all duration-700" style={{ width: pct(top?.confidence) }} />
+                    </div>
+                    <span className="text-xs text-emerald-400 font-semibold">{pct(top?.confidence)} sure</span>
                   </div>
-                  {foodResult.top_prediction?.note && (
-                    <p className="text-xs text-text-secondary italic mt-1">
-                      {foodResult.top_prediction.note}
-                    </p>
-                  )}
                 </div>
 
-                {/* Alternatives */}
                 {foodResult.alternatives?.length > 0 && (
-                  <div className="shrink-0 space-y-1">
-                    <span className="text-[10px] text-text-muted uppercase font-semibold">Also possible</span>
-                    {foodResult.alternatives.map((alt: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between gap-3 text-xs">
-                        <span className="text-text-secondary">{alt.name}</span>
-                        <span className="text-text-muted">{confidencePct(alt.confidence)}</span>
-                      </div>
-                    ))}
+                  <div className="sm:max-w-[45%]">
+                    <p className="text-[11px] text-text-muted mb-1.5">Also possible</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {foodResult.alternatives.map((a: any, i: number) => (
+                        <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-dark-surface border border-dark-border text-text-secondary">
+                          {a.name} <span className="text-text-muted">{pct(a.confidence)}</span>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Nutrition Estimate */}
-              {foodResult.nutrition_estimate && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-text-secondary uppercase tracking-wider">
-                      Nutritional Breakdown
-                    </h4>
-                    <span className="text-[11px] text-text-muted">
-                      {foodResult.nutrition_estimate.serving_description || `~${foodResult.nutrition_estimate.serving_g}g serving`}
-                    </span>
-                  </div>
-
-                  {/* Primary macros */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div className="p-3 bg-dark-card rounded-lg border border-dark-border text-center">
-                      <span className="text-text-muted block mb-0.5">Calories</span>
-                      <span className="text-lg font-bold text-white">
-                        {foodResult.nutrition_estimate.calories}
-                      </span>
-                      <span className="text-text-muted text-[10px]"> kcal</span>
+              {n && (
+                <>
+                  {/* Portion control */}
+                  <div className="p-4 rounded-xl bg-dark-surface border border-dark-border space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-white">Portion size</p>
+                        <p className="text-[11px] text-text-muted">
+                          {n.serving_description || (n.serving_g ? `~${n.serving_g}g serving` : 'Standard serving')}
+                          {n.serving_g ? ` · now about ${Math.round(n.serving_g * portion)}g` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setPortion((p) => Math.max(0.25, round1(p - 0.25)))} aria-label="Smaller portion"
+                          className="w-8 h-8 rounded-lg bg-dark-card border border-dark-border hover:border-brand/50 active:scale-90 transition flex items-center justify-center"><Minus className="w-4 h-4 text-text-secondary" /></button>
+                        <span className="w-12 text-center text-lg font-black text-white tabular-nums">{portion}×</span>
+                        <button onClick={() => setPortion((p) => Math.min(4, round1(p + 0.25)))} aria-label="Larger portion"
+                          className="w-8 h-8 rounded-lg bg-dark-card border border-dark-border hover:border-brand/50 active:scale-90 transition flex items-center justify-center"><Plus className="w-4 h-4 text-text-secondary" /></button>
+                      </div>
                     </div>
-                    <div className="p-3 bg-dark-card rounded-lg border border-dark-border text-center">
-                      <span className="text-text-muted block mb-0.5">Protein</span>
-                      <span className="text-lg font-bold text-brand-light">
-                        {foodResult.nutrition_estimate.protein_g}g
-                      </span>
-                    </div>
-                    <div className="p-3 bg-dark-card rounded-lg border border-dark-border text-center">
-                      <span className="text-text-muted block mb-0.5">Carbs</span>
-                      <span className="text-lg font-bold text-white">
-                        {foodResult.nutrition_estimate.carbs_g}g
-                      </span>
-                    </div>
-                    <div className="p-3 bg-dark-card rounded-lg border border-dark-border text-center">
-                      <span className="text-text-muted block mb-0.5">Fat</span>
-                      <span className="text-lg font-bold text-white">
-                        {foodResult.nutrition_estimate.fat_g}g
-                      </span>
+                    <input type="range" min={0.25} max={4} step={0.25} value={portion} onChange={(e) => setPortion(Number(e.target.value))}
+                      aria-label="Portion multiplier" className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                      style={{ background: `linear-gradient(to right,#f97316 ${((portion - 0.25) / 3.75) * 100}%,#1e1e2e ${((portion - 0.25) / 3.75) * 100}%)` }} />
+                    <div className="flex gap-1.5">
+                      {[0.5, 1, 1.5, 2].map((m) => (
+                        <button key={m} onClick={() => setPortion(m)}
+                          className={`flex-1 text-xs font-bold py-1.5 rounded-lg border transition ${portion === m ? 'bg-brand/20 border-brand/50 text-brand-light' : 'border-dark-border text-text-muted hover:text-white'}`}>{m}×</button>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Secondary macros */}
-                  {(foodResult.nutrition_estimate.fiber_g > 0 || foodResult.nutrition_estimate.sugar_g > 0) && (
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      {foodResult.nutrition_estimate.fiber_g > 0 && (
-                        <div className="p-2.5 bg-dark-card rounded border border-dark-border flex items-center justify-between">
-                          <span className="text-text-muted">Dietary Fiber</span>
-                          <span className="font-semibold text-white">
-                            {foodResult.nutrition_estimate.fiber_g}g
-                          </span>
-                        </div>
-                      )}
-                      {foodResult.nutrition_estimate.sugar_g > 0 && (
-                        <div className="p-2.5 bg-dark-card rounded border border-dark-border flex items-center justify-between">
-                          <span className="text-text-muted">Sugar</span>
-                          <span className="font-semibold text-white">
-                            {foodResult.nutrition_estimate.sugar_g}g
-                          </span>
-                        </div>
-                      )}
+                  <MacroDonut p={scaled(n.protein_g)} c={scaled(n.carbs_g)} f={scaled(n.fat_g)} kcal={num(n.calories) * portion} />
+
+                  {(num(n.fiber_g) > 0 || num(n.sugar_g) > 0) && (
+                    <div className="grid grid-cols-2 gap-2.5 text-xs">
+                      {num(n.fiber_g) > 0 && <div className="p-2.5 bg-dark-surface rounded-lg border border-dark-border flex justify-between"><span className="text-text-muted">Fibre</span><span className="font-bold text-white">{scaled(n.fiber_g)}g</span></div>}
+                      {num(n.sugar_g) > 0 && <div className="p-2.5 bg-dark-surface rounded-lg border border-dark-border flex justify-between"><span className="text-text-muted">Sugar</span><span className="font-bold text-white">{scaled(n.sugar_g)}g</span></div>}
                     </div>
                   )}
 
-                  {/* Data source */}
-                  <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
-                    <Info className="w-3.5 h-3.5 shrink-0" />
-                    <span>
-                      Data source: <strong className="text-text-secondary">{foodResult.nutrition_estimate.source}</strong>.{' '}
-                      {foodResult.disclaimer}
-                    </span>
+                  <p className="flex items-start gap-1.5 text-[11px] text-text-muted">
+                    <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    <span>Source: <strong className="text-text-secondary">{n.source}</strong>. {foodResult.disclaimer}</span>
+                  </p>
+                </>
+              )}
+
+              {/* Log */}
+              <div className="pt-4 border-t border-dark-border space-y-3">
+                {foodResult.confirm_prompt && <p className="text-xs text-text-muted">{foodResult.confirm_prompt}</p>}
+                <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+                  <div className="flex gap-1.5" role="radiogroup" aria-label="Meal type">
+                    {MEALS.map((m) => (
+                      <button key={m} role="radio" aria-checked={meal === m} onClick={() => { setMeal(m); setLogged(false); }}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-full border transition ${meal === m ? 'bg-brand text-white border-brand' : 'border-dark-border text-text-secondary hover:border-brand/40'}`}>{m}</button>
+                    ))}
+                  </div>
+                  <button
+                    disabled={logged}
+                    onClick={() => setLogged(true) /* TODO: POST to your nutrition logging endpoint with { meal, portion, name, nutrition scaled } */}
+                    className={`text-xs py-2.5 px-5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition ${logged ? 'bg-success/15 text-success border border-success/30' : 'fortis-btn-primary'}`}>
+                    <CheckCircle className="w-4 h-4" />{logged ? `Logged to ${meal}` : `Log ${Math.round(num(n?.calories) * portion)} kcal`}
+                  </button>
+                </div>
+                {logged && <p className="text-[11px] text-text-muted">Saved on this screen only for now. The logging endpoint isn't connected yet.</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ───────────────────── FORM ───────────────────── */}
+      {tab === 'form' && (
+        <div className="space-y-5 animate-fade-in">
+          <input ref={videoInput} type="file" accept="video/*" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) analyseVideo(f); }} />
+
+          {/* Exercise picker */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="Exercise">
+            {EXERCISES.map((x) => (
+              <button key={x.id} role="radio" aria-checked={exercise === x.id}
+                onClick={() => { setExercise(x.id); if (lastVideo) analyseVideo(lastVideo, x.id); }}
+                className={`text-left p-4 rounded-2xl border transition-all hover:-translate-y-0.5 ${exercise === x.id ? 'bg-brand/10 border-brand shadow-glow' : 'bg-dark-card border-dark-border hover:border-brand/40'}`}>
+                <p className="font-black text-white">{x.name}</p>
+                <p className="text-xs text-text-muted mt-0.5">{x.hint}</p>
+              </button>
+            ))}
+          </div>
+
+          {!videoPreview ? (
+            <Viewfinder active={videoDrag}>
+              <div
+                onDrop={(e) => { e.preventDefault(); setVideoDrag(false); const f = e.dataTransfer.files?.[0]; if (f) analyseVideo(f); }}
+                onDragOver={(e) => { e.preventDefault(); setVideoDrag(true); }}
+                onDragLeave={() => setVideoDrag(false)}
+                onClick={() => videoInput.current?.click()}
+                role="button" tabIndex={0}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && videoInput.current?.click()}
+                className={`cursor-pointer text-center px-6 py-12 space-y-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${videoDrag ? 'bg-brand/10' : 'bg-dark-card hover:bg-dark-hover'}`}>
+                <div className="w-14 h-14 mx-auto rounded-full bg-dark-surface border border-dark-border flex items-center justify-center text-brand-light"><Video className="w-7 h-7" /></div>
+                <h3 className="text-lg font-black text-white">{videoDrag ? 'Release to analyse' : 'Drop a clip of your set'}</h3>
+                <p className="text-xs text-text-muted max-w-sm mx-auto">Film from the side with your whole body in frame. A few reps is enough.</p>
+                <button onClick={(e) => { e.stopPropagation(); videoInput.current?.click(); }} className="fortis-btn-primary text-xs py-2 px-5 inline-flex items-center gap-2">
+                  <Upload className="w-4 h-4" />Choose video
+                </button>
+              </div>
+            </Viewfinder>
+          ) : (
+            <div className="space-y-3">
+              <Viewfinder scanning={analyzing}>
+                <video src={videoPreview} controls playsInline className="w-full max-h-80 bg-dark-surface" />
+              </Viewfinder>
+              <div className="flex items-center justify-between">
+                {analyzing
+                  ? <span className="flex items-center gap-2 text-xs text-text-secondary"><div className="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />Analysing your {EXERCISES.find((x) => x.id === exercise)?.name.toLowerCase()}…</span>
+                  : <span />}
+                <button onClick={clearVideo} className="text-xs text-text-muted hover:text-white flex items-center gap-1 transition-colors"><X className="w-3.5 h-3.5" />Use a different video</button>
+              </div>
+            </div>
+          )}
+
+          {formError && (
+            <div role="alert" className="p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-xs flex items-center justify-between gap-3">
+              <span className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />{formError}</span>
+              {lastVideo && <button onClick={() => analyseVideo(lastVideo)} className="fortis-btn-secondary py-1.5 px-3 text-xs shrink-0 flex items-center gap-1"><RotateCcw className="w-3 h-3" />Retry</button>}
+            </div>
+          )}
+
+          {formResult && !analyzing && (
+            <div className="bg-dark-card border border-brand/20 rounded-2xl p-5 space-y-5 shadow-glow animate-slide-up">
+              <div className="grid grid-cols-1 sm:grid-cols-[auto,1fr] gap-6 items-center">
+                <div>
+                  <ScoreRing score={num(formResult.form_score)} />
+                  {formResult.confidence != null && <p className="text-center text-[11px] text-text-muted mt-2">{pct(formResult.confidence)} assessment confidence</p>}
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-black text-white capitalize flex items-center gap-2"><Award className="w-6 h-6 text-success" />{formResult.exercise} biomechanics</h2>
+                  {formResult.primary_improvement && (
+                    <div className="p-3.5 rounded-xl bg-brand/10 border border-brand/25">
+                      <p className="text-xs font-bold text-brand-light flex items-center gap-1.5 mb-1"><Target className="w-3.5 h-3.5" />Fix this first</p>
+                      <p className="text-sm text-text-secondary leading-relaxed">{formResult.primary_improvement}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Breakdown: tap a metric to focus */}
+              {formResult.breakdown && Object.keys(formResult.breakdown).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-text-secondary">Breakdown</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {Object.entries(formResult.breakdown).map(([k, v]: [string, any]) => {
+                      const val = num(v);
+                      const isScore = typeof v === 'number' && val <= 100;
+                      const color = val >= 80 ? '#10b981' : val >= 60 ? '#f59e0b' : '#ef4444';
+                      return (
+                        <button key={k} onClick={() => setOpenMetric(openMetric === k ? null : k)} aria-pressed={openMetric === k}
+                          className={`text-left p-3 rounded-xl border transition ${openMetric === k ? 'border-brand/50 bg-brand/5' : 'bg-dark-surface border-dark-border hover:border-brand/30'}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-text-secondary capitalize">{k.replace(/_/g, ' ')}</span>
+                            <span className="text-lg font-black text-white tabular-nums">{String(v)}</span>
+                          </div>
+                          {isScore && <div className="h-1.5 mt-2 rounded-full bg-dark-border overflow-hidden"><div className="h-full rounded-full transition-all duration-700" style={{ width: `${val}%`, background: color }} /></div>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Log CTA */}
-              <div className="pt-2 border-t border-dark-border flex items-center justify-between gap-3">
-                <p className="text-xs text-text-muted">{foodResult.confirm_prompt}</p>
-                <button
-                  className="fortis-btn-primary text-xs py-2 px-4 shrink-0 flex items-center gap-1.5"
-                  onClick={() => {
-                    // TODO: wire up to nutrition logging endpoint
-                    alert('Food logging endpoint coming soon!');
-                  }}
-                >
-                  <CheckCircle className="w-3.5 h-3.5" />
-                  Log This Meal
-                </button>
-              </div>
+              {formResult.feedback?.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-text-secondary">Coaching notes</p>
+                  <ul className="space-y-2">
+                    {formResult.feedback.map((f: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2.5 text-sm text-text-secondary p-3 rounded-xl bg-dark-surface border border-dark-border">
+                        <CheckCircle className="w-4 h-4 text-brand mt-0.5 shrink-0" /><span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <button onClick={() => videoInput.current?.click()} className="fortis-btn-secondary w-full text-sm py-2.5 flex items-center justify-center gap-2">
+                <Video className="w-4 h-4" />Record another set and compare
+              </button>
             </div>
           )}
         </div>

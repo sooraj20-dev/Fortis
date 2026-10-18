@@ -73,18 +73,15 @@ class FitnessStateCalculator:
 
         strength_score = None
         if recent_workouts:
+            w_ids = [w.id for w in recent_workouts if getattr(w, "id", None) is not None]
             total_sets_planned = 0
             total_sets_done = 0
-            for w in recent_workouts:
-                exercises = db.query(WorkoutExercise).filter(
-                    WorkoutExercise.workout_id == w.id
-                ).all()
-                for we in exercises:
-                    total_sets_planned += we.planned_sets
-                    sets_logged = db.query(ExerciseLog).filter(
-                        ExerciseLog.workout_exercise_id == we.id
-                    ).count()
-                    total_sets_done += sets_logged
+            if w_ids:
+                all_we = db.query(WorkoutExercise).filter(WorkoutExercise.workout_id.in_(w_ids)).all()
+                total_sets_planned = sum(we.planned_sets or 0 for we in all_we)
+                we_ids = [we.id for we in all_we if getattr(we, "id", None) is not None]
+                if we_ids:
+                    total_sets_done = db.query(ExerciseLog).filter(ExerciseLog.workout_exercise_id.in_(we_ids)).count()
 
             completion_rate = total_sets_done / max(total_sets_planned, 1)
             strength_score = clamp(50 + (completion_rate - 0.5) * 60 + len(recent_workouts) * 4)

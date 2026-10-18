@@ -28,6 +28,7 @@ class TokenResponse(BaseModel):
     email: str
     is_admin: bool
     onboarding_complete: bool
+    avatar_url: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -36,5 +37,6 @@ class UserResponse(BaseModel):
     name: str
     is_admin: bool
     is_active: bool
+    avatar_url: Optional[str] = None
 
     model_config = {"from_attributes": True}

@@ -1,13 +1,15 @@
-﻿"""Profile router â€” profile CRUD, onboarding"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+import os
+import uuid
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.profile import Profile, Goal, Equipment, Schedule, NutritionPreference
 from app.models.recovery import SleepLog, RecoveryLog
 from app.models.workout import Workout
+from app.config import settings
 from app.schemas.profile import (
     FullProfileResponse,
     OnboardingData,
@@ -37,6 +39,8 @@ def _build_full_profile(current_user: User, db: Session) -> FullProfileResponse:
         profile is not None and goal is not None
     )
 
+    avatar_url = getattr(profile, "avatar_url", None) if profile else None
+
     return FullProfileResponse(
         profile=ProfileResponse.model_validate(profile) if profile else None,
         goal=GoalResponse.model_validate(goal) if goal else None,
@@ -45,6 +49,7 @@ def _build_full_profile(current_user: User, db: Session) -> FullProfileResponse:
         nutrition_pref=NutritionPrefResponse.model_validate(nutrition_pref) if nutrition_pref else None,
         name=current_user.name,
         email=current_user.email,
+        avatar_url=avatar_url,
         onboarding_complete=onboarding_complete,
     )
 
@@ -244,6 +249,7 @@ def update_profile(
         "exercises_to_avoid": data.exercises_to_avoid,
         "preferred_exercise_types": data.preferred_exercise_types,
         "strength_benchmarks": data.strength_benchmarks,
+        "avatar_url": data.avatar_url,
     }
     for k, v in profile_map.items():
         if v is not None:
@@ -302,3 +308,45 @@ def update_profile(
 
     db.commit()
     return _build_full_profile(current_user, db)
+
+
+@router.post("/profile/upload-avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload a profile picture file (JPG, PNG, WebP) and update user profile.
+    """
+    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    if not profile:
+        profile = Profile(user_id=current_user.id)
+        db.add(profile)
+
+    avatar_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
+    os.makedirs(avatar_dir, exist_ok=True)
+
+    extension = os.path.splitext(file.filename or "")[1].lower()
+    if extension not in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
+        extension = ".jpg"
+
+    unique_filename = f"user_{current_user.id}_{uuid.uuid4().hex[:8]}{extension}"
+    file_path = os.path.join(avatar_dir, unique_filename)
+
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 10MB")
+
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    avatar_url = f"/uploads/avatars/{unique_filename}"
+    profile.avatar_url = avatar_url
+    db.add(profile)
+    db.commit()
+
+    return {
+        "avatar_url": avatar_url,
+        "message": "Avatar uploaded successfully"
+    }
