@@ -98,10 +98,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_origin_regex=(
-        r"^http://(?:localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|"
-        r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}):5173$"
-        if not os.getenv("VERCEL")
-        else None
+        r"^(https://.*\.vercel\.app|http://(?:localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|"
+        r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}):5173)$"
     ),
     allow_credentials=True,
     allow_methods=["*"],
