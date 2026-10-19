@@ -1,6 +1,12 @@
 """Demo user seed — 4 weeks of realistic fitness data for the demo flow"""
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+import bcrypt
+if not hasattr(bcrypt, "__about__"):
+    class _BcryptAbout:
+        __version__ = getattr(bcrypt, "__version__", "4.0.1")
+    bcrypt.__about__ = _BcryptAbout()
+
 from passlib.context import CryptContext
 import random
 
