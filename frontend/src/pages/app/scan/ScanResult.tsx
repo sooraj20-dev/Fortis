@@ -187,6 +187,20 @@ const ScanResult: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-4">
 
+      <motion.div
+        role="status"
+        aria-live="polite"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200"
+      >
+        <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
+        <div>
+          <p className="text-sm font-bold">Scan complete — your results are ready.</p>
+          <p className="mt-0.5 text-xs text-emerald-100/75">Your movement profile has been updated.</p>
+        </div>
+      </motion.div>
+
       {/* ── HERO: Movement Quality ────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}

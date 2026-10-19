@@ -27,6 +27,18 @@ class Workout(Base):
     total_duration_min = Column(Integer, nullable=True)
     decision_id = Column(Integer, nullable=True)
 
+
+class WorkoutAdaptationDraft(Base):
+    __tablename__ = "workout_adaptation_drafts"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    source_workout_id = Column(Integer, ForeignKey("workouts.id"))
+    available_minutes = Column(Integer)
+    equipment_ids = Column(JSON)
+    status = Column(String, default="DRAFT")
+    accepted_workout_id = Column(Integer, ForeignKey("workouts.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class WorkoutExercise(Base):
     __tablename__ = "workout_exercises"
     id = Column(Integer, primary_key=True, index=True)

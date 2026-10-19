@@ -16,6 +16,8 @@ The root [`vercel.json`](./vercel.json) builds the Vite frontend and the FastAPI
    - `MONGODB_URL`: a MongoDB connection string for a database reachable from Vercel.
    - `MONGODB_DB_NAME`: the database name (for example, `fortis`).
    - `JWT_SECRET`: a unique, randomly generated secret of at least 32 characters.
+   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM_EMAIL`: credentials for an SMTP mailbox that can deliver verification links. Configure these to require inbox verification; if SMTP is not configured, registration still works without email verification.
+   - `FRONTEND_BASE_URL`: the deployed app origin used in verification links (for example, `https://your-app.vercel.app`).
    - The AI Coach uses the offline contextual provider and requires no Gemini API key. Gemini settings are only used by the existing vision routes.
 3. Deploy. The app is served at `/`; the API and interactive API docs are available at `/api/...` and `/docs`.
 
@@ -36,7 +38,7 @@ Requirements: Python 3.11 or newer, Node.js 18 or newer, and a reachable MongoDB
    Copy-Item .env.example .env
    ```
 
-2. Edit `backend/.env` and set `MONGODB_URL` to your MongoDB connection string and `JWT_SECRET` to a unique random value of at least 32 characters. Do not commit `.env` or share its values.
+2. Edit `backend/.env` and set `MONGODB_URL` and a unique `JWT_SECRET` of at least 32 characters. Configure the SMTP settings from `backend/.env.example` to send verification links; without SMTP, registration remains available but email verification is disabled. Set `FRONTEND_BASE_URL` to the origin where the frontend runs. Do not commit `.env` or share its values.
 
 3. Install frontend dependencies:
 

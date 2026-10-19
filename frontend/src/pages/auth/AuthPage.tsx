@@ -7,6 +7,8 @@ import BrandLogo from '../../components/BrandLogo';
 import type { TokenResponse } from '../../types';
 
 type Tab = 'login' | 'register';
+type VerificationState = 'checking' | 'verified' | 'failed' | null;
+type RegistrationResponse = { message: string; email: string; verification_required: boolean };
 
 const BG_IMAGE = '/landing_imgs/footer.png';
 
@@ -35,6 +37,10 @@ const AuthPage: React.FC = () => {
   const [shake, setShake] = useState(false);
   // Which fields have errors (for red border)
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
+  const [registrationPending, setRegistrationPending] = useState(false);
+  const [verificationState, setVerificationState] = useState<VerificationState>(null);
+  const [verificationMessage, setVerificationMessage] = useState('');
+  const [resendingVerification, setResendingVerification] = useState(false);
 
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
@@ -47,6 +53,26 @@ const AuthPage: React.FC = () => {
       navigate('/dashboard', { replace: true });
     }
   }, [isAuthenticated, navigate]);
+
+  const verificationToken = searchParams.get('verify');
+  useEffect(() => {
+    if (!verificationToken) return;
+    let active = true;
+    setVerificationState('checking');
+    api.post<{ verified: boolean; message: string; email: string }>('/api/auth/verify-email', { token: verificationToken })
+      .then((res) => {
+        if (!active) return;
+        setVerificationState('verified'); setVerificationMessage(res.data.message); setEmail(res.data.email || '');
+        setRegistrationPending(true); setTab('login');
+        sessionStorage.setItem('fortis_new_registration', 'true');
+      })
+      .catch((err: any) => {
+        if (!active) return;
+        setVerificationState('failed'); setVerificationMessage(parseError(err, 'This verification link is invalid or expired. Request a new link.'));
+      })
+      .finally(() => { if (active) navigate('/auth/login?tab=login', { replace: true }); });
+    return () => { active = false; };
+  }, [verificationToken, navigate]);
 
   // Sync tab from URL param
   useEffect(() => {
@@ -84,12 +110,15 @@ const AuthPage: React.FC = () => {
     setFieldErrors({});
     setLoading(true);
     try {
-      sessionStorage.removeItem('fortis_new_registration');
       const res = await api.post<TokenResponse>('/api/auth/login', { email, password });
       handleSuccess(res.data);
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status === 401 || status === 403) {
+      const detail = String(err?.response?.data?.detail || '');
+      if (status === 403 && detail.toLowerCase().includes('verify your email')) {
+        setRegistrationPending(true);
+        showError(detail, ['email']);
+      } else if (status === 401 || status === 403) {
         showError('Incorrect email or password. Please try again.', ['email', 'password']);
       } else if (status === 404) {
         showError('No account found with this email. Did you mean to register?', ['email']);
@@ -117,20 +146,19 @@ const AuthPage: React.FC = () => {
       showError('Please enter a valid email address.', ['email']);
       return;
     }
-    if (password.length < 6) {
-      showError('Password must be at least 6 characters long.', ['password']);
+    if (password.length < 8 || new TextEncoder().encode(password).length > 72) {
+      showError('Password must be at least 8 characters and no more than 72 UTF-8 bytes.', ['password']);
       return;
     }
 
     setLoading(true);
     try {
       const res = await api.post<TokenResponse>('/api/auth/register', { name, email, password });
-      sessionStorage.setItem('fortis_new_registration', 'true');
       handleSuccess(res.data);
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 409 || status === 400) {
-        showError('An account with this email already exists. Try signing in instead.', ['email']);
+        showError('If this address belongs to an account, sign in or request a verification link.', ['email']);
       } else if (status === 422) {
         showError(parseError(err, 'Please check your details and try again.'));
       } else {
@@ -139,6 +167,17 @@ const AuthPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resendVerification = async () => {
+    if (!email) { showError('Enter the email address you registered with.', ['email']); return; }
+    setResendingVerification(true); setError('');
+    try {
+      const res = await api.post<RegistrationResponse>('/api/auth/verification/resend', { email });
+      setVerificationMessage(res.data.message); setRegistrationPending(true);
+    } catch (err: any) {
+      setVerificationMessage(parseError(err, 'Could not send a verification link. Please try again later.'));
+    } finally { setResendingVerification(false); }
   };
 
   // 16px text on phones stops iOS Safari from zooming into the field on focus
@@ -229,6 +268,17 @@ const AuthPage: React.FC = () => {
                 >
                   ✕
                 </button>
+              </div>
+            )}
+
+            {(registrationPending || verificationState) && (
+              <div className={`mb-5 rounded-xl border p-3.5 text-sm ${verificationState === 'failed' ? 'border-danger/40 bg-danger/10 text-danger' : 'border-brand/40 bg-brand/10 text-text-primary'}`} role="status" aria-live="polite">
+                <p>{verificationState === 'checking' ? 'Verifying your email link…' : verificationMessage || 'Check your email for a verification link before signing in.'}</p>
+                {tab === 'login' && (registrationPending || verificationState === 'failed') && verificationState !== 'checking' && (
+                  <button type="button" onClick={resendVerification} disabled={resendingVerification} className="mt-2 text-brand-light font-semibold underline underline-offset-2 disabled:opacity-60">
+                    {resendingVerification ? 'Sending…' : 'Resend verification email'}
+                  </button>
+                )}
               </div>
             )}
 
@@ -325,7 +375,7 @@ const AuthPage: React.FC = () => {
                       id="reg-password"
                       type={showPass ? 'text' : 'password'}
                       className={`fortis-input pr-12 ${inputBase} ${fieldErrors.password ? 'border-danger focus:border-danger' : ''}`}
-                      placeholder="Min 6 characters"
+                      placeholder="Create a strong password"
                       value={password}
                       onChange={(e) => { setPassword(e.target.value); clearFieldError('password'); }}
                       required
@@ -340,8 +390,9 @@ const AuthPage: React.FC = () => {
                       {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  <p className="text-[11px] text-text-muted mt-1">Use at least 8 characters with uppercase and lowercase letters, a number, and a symbol.</p>
                   {fieldErrors.password && (
-                    <p className="text-[11px] text-danger mt-1">Must be at least 6 characters</p>
+                    <p className="text-[11px] text-danger mt-1">Use 8+ characters with uppercase and lowercase letters, a number, and a symbol.</p>
                   )}
                 </div>
                 <button type="submit" disabled={loading} className="fortis-btn-primary w-full py-3.5 sm:py-3 mt-2">

@@ -9,6 +9,10 @@ class AdaptationRequest(BaseModel):
     equipment_ids: List[Literal["bodyweight", "dumbbells", "resistance_bands", "exercise_mat", "pull_up_bar", "bench", "full_gym"]] = Field(default_factory=lambda: ["bodyweight"], min_length=1, max_length=7)
 
 
+class AdaptationConfirmationRequest(BaseModel):
+    adaptation_id: int = Field(gt=0)
+
+
 class DecisionReason(BaseModel):
     rule_id: Literal["TIME_CONSTRAINT", "EQUIPMENT_MISMATCH", "PLAN_UNAVAILABLE", "SUITABLE_PLAN"]
     label: str

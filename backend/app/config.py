@@ -10,7 +10,15 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./fortis.db"
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_STARTTLS: bool = True
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
+    EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 30
     AI_PROVIDER: str = "gemini"
     AI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o-mini"
@@ -19,6 +27,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
     MAX_UPLOAD_SIZE_MB: int = 4 if os.getenv("VERCEL") else 50
     UPLOAD_DIR: str = "/tmp/fortis-uploads" if os.getenv("VERCEL") else "uploads"
+    AUTH_RATE_LIMIT_ENABLED: bool = True
+    AUTH_RATE_LIMIT_LOGIN_PER_MINUTE: int = 15
+    AUTH_RATE_LIMIT_REGISTER_PER_MINUTE: int = 10
+    AUTH_MAX_FAILED_LOGIN_ATTEMPTS: int = 5
+    AUTH_LOCKOUT_MINUTES: int = 15
 
     class Config:
         env_file = Path(__file__).resolve().parents[1] / ".env"

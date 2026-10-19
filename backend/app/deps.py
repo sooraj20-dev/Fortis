@@ -17,13 +17,25 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         user_id: str = payload.get("sub")
-        if user_id is None:
+        token_type: str = payload.get("type")
+        if user_id is None or (token_type is not None and token_type != "access"):
             raise credentials_exception
     except JWTError:
         raise credentials_exception
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
         raise credentials_exception
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated",
+        )
+    # NULL/missing remains compatible with accounts created before email verification.
+    if getattr(user, "email_verified", None) is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification is required before accessing this account.",
+        )
     return user
 
 

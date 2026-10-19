@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Dumbbell, CheckCircle, Play, Sparkles, AlertCircle, ChevronDown, Plus, Minus,
   Target, TrendingUp, SkipForward, Timer, Award, Flame, Battery, Activity,
@@ -246,7 +247,7 @@ function CoachStage({ text, tone, caption, height = 'h-64 sm:h-72' }: { text: st
   const { color, label } = TONE_STYLE[tone];
   return (
     <div className={`relative ${height} rounded-3xl overflow-hidden border border-dark-border bg-black`} style={{ boxShadow: `0 0 40px -12px ${color}66` }}>
-      <img src="/landing_imgs/coach.png" alt="Coach Fortis" className="fx-kenburns absolute inset-0 w-full h-full object-cover object-top sm:object-[50%_18%] opacity-90" />
+      <img src="/landing_imgs/coach2.png" alt="Coach Fortis" className="fx-kenburns absolute inset-0 w-full h-full object-cover object-top sm:object-[50%_18%] opacity-90" />
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-transparent" />
       <div className="absolute inset-0 hidden sm:block bg-gradient-to-r from-black/85 via-black/30 to-transparent" />
       <div className="absolute top-0 inset-x-0 h-3 bg-black" />
@@ -271,7 +272,7 @@ function Coach({ quote, tone = 'hype' }: { quote: string; tone?: Tone }) {
     <div className="flex items-center gap-3 bg-dark-card border rounded-2xl p-3" style={{ borderColor: `${color}40` }}>
       <div className="relative shrink-0">
         <div className="w-11 h-11 rounded-full overflow-hidden border-2" style={{ borderColor: color }}>
-          <img src="/landing_imgs/coach.png" alt="Coach" className="w-full h-full object-cover object-top" />
+          <img src="/landing_imgs/hero.png" alt="Coach" className="w-full h-full object-cover object-top" />
         </div>
         <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-success border-2 border-dark-card" />
       </div>
@@ -505,7 +506,7 @@ function Finale({ time, sets, totalSets, volume, rpe, line, tone, onBack }: {
         {beat >= 3 && (
           <div className="fx-fade w-full max-w-xl text-left rounded-2xl bg-black/60 backdrop-blur border p-4 flex gap-3" style={{ borderColor: `${color}55` }}>
             <div className="w-12 h-12 shrink-0 rounded-full overflow-hidden border-2" style={{ borderColor: color }}>
-              <img src="/landing_imgs/coach.png" alt="" className="w-full h-full object-cover object-top" />
+              <img src="/landing_imgs/scan.png" alt="" className="w-full h-full object-cover object-top" />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-black mb-1" style={{ color }}>Coach Fortis</p>
@@ -521,7 +522,7 @@ function Finale({ time, sets, totalSets, volume, rpe, line, tone, onBack }: {
           <div className="fx-fade flex flex-col items-center gap-2 max-w-sm">
             <p className="text-xs text-text-secondary">Your fitness state is updated. Tomorrow adapts to how you felt.</p>
             <button onClick={(e) => { e.stopPropagation(); onBack(); }} className="fortis-btn-primary py-3 px-8 text-sm font-bold flex items-center gap-2">
-              <Award className="w-4 h-4" />Back to overview
+              <Award className="w-4 h-4" />View Progress &amp; XP
             </button>
           </div>
         ) : (
@@ -534,6 +535,7 @@ function Finale({ time, sets, totalSets, volume, rpe, line, tone, onBack }: {
 
 // ─── Page ─────────────────────────────────────────────────────
 const WorkoutInner: React.FC = () => {
+  const navigate = useNavigate();
   const [workout, setWorkout] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -661,7 +663,7 @@ const WorkoutInner: React.FC = () => {
   const acceptAdaptation = async () => {
     if (!workout?.id) return;
     setSaving(true); setActionError(null);
-    try { const res = await api.post(`/api/workouts/${workout.id}/adapted-session`, { available_minutes: adaptMinutes, equipment_ids: adaptEquipment }); setWorkout(res.data); setAdaptDraft(null); setAdaptOpen(false); }
+    try { const res = await api.post(`/api/workouts/${workout.id}/adapted-session`, { adaptation_id: Number(adaptDraft?.recommendation_id) }); setWorkout(res.data); setAdaptDraft(null); setAdaptOpen(false); }
     catch (e: any) { setActionError(e?.response?.data?.detail || 'Could not save this session. Your original plan is unchanged.'); }
     finally { setSaving(false); }
   };
@@ -745,7 +747,8 @@ const WorkoutInner: React.FC = () => {
   if (phase === 'complete') {
     return (
       <Finale time={finalTime} sets={doneSets} totalSets={totalSets} volume={loggedVolume} rpe={rpe}
-        line={finaleLine} tone={finaleTone} onBack={() => setPhase('overview')} />
+        line={finaleLine} tone={finaleTone}
+        onBack={() => navigate('/progress', { state: { workoutCompleted: true } })} />
     );
   }
 
@@ -971,7 +974,7 @@ const WorkoutInner: React.FC = () => {
             <fieldset><legend className="text-xs font-bold text-text-secondary mb-2">Available equipment</legend><div className="flex flex-wrap gap-2">{[['bodyweight','Bodyweight only'],['dumbbells','Dumbbells'],['resistance_bands','Resistance bands'],['exercise_mat','Exercise mat'],['pull_up_bar','Pull-up bar'],['bench','Bench'],['full_gym','Full gym']].map(([id,label]) => <button key={id} aria-pressed={adaptEquipment.includes(id)} onClick={() => setAdaptEquipment(id==='full_gym'?['full_gym']:id==='bodyweight'?(adaptEquipment.length===1&&adaptEquipment[0]==='bodyweight'?[]: ['bodyweight']):adaptEquipment.filter(x=>x!=='bodyweight'&&x!=='full_gym').includes(id)?adaptEquipment.filter(x=>x!==id):[...adaptEquipment.filter(x=>x!=='full_gym'),id])} className={`rounded-full border px-3 py-1.5 text-xs ${adaptEquipment.includes(id)?'border-brand bg-brand/20 text-white':'border-dark-border text-text-secondary'}`}>{label}</button>)}</div></fieldset>
             <div className="flex gap-2"><button onClick={generateAdaptation} disabled={saving||adaptEquipment.length===0} className="fortis-btn-primary flex-1 py-2.5 text-sm">{saving?'Preparing…':'Review adaptation'}</button><button onClick={()=>setAdaptOpen(false)} className="fortis-btn-secondary px-4 py-2.5 text-sm">Cancel</button></div>
           </section>}
-          {adaptOpen && adaptDraft && <DecisionExplanationCard draft={adaptDraft} busy={saving} onAccept={acceptAdaptation} onKeep={()=>{setAdaptDraft(null);setAdaptOpen(false);}} />}
+          {adaptOpen && adaptDraft && <DecisionExplanationCard draft={adaptDraft} busy={saving} onAccept={acceptAdaptation} onKeep={()=>{ if (workout?.id && adaptDraft?.recommendation_id) void api.post(`/api/workouts/${workout.id}/adaptation-drafts/${Number(adaptDraft.recommendation_id)}/reject`).catch(()=>undefined); setAdaptDraft(null);setAdaptOpen(false); }} />}
         </div>
       )}
 

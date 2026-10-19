@@ -7,13 +7,13 @@ from typing import List, Optional
 from app.database import get_db
 from app.deps import get_current_user, require_onboarded_user
 from app.models.user import User
-from app.models.workout import Exercise, Workout, WorkoutExercise, ExerciseLog, PostWorkoutFeedback
+from app.models.workout import Exercise, Workout, WorkoutExercise, ExerciseLog, PostWorkoutFeedback, WorkoutAdaptationDraft
 from app.models.profile import Goal, Equipment, Schedule, Profile
 from app.models.intelligence import FortisDecision, FitnessState
 from app.intelligence.decision_engine import FortisDecisionEngine
 from app.intelligence.fitness_state import FitnessStateCalculator
 from app.intelligence.adaptation import adapt_workout_exercises, get_workout_type_for_decision, estimate_workout_duration, build_time_equipment_draft
-from app.schemas.workout import ExerciseLogCreate, PostWorkoutFeedbackCreate, AdaptationRequest, AdaptationDraftResponse
+from app.schemas.workout import ExerciseLogCreate, PostWorkoutFeedbackCreate, AdaptationRequest, AdaptationConfirmationRequest, AdaptationDraftResponse
 
 router = APIRouter(prefix="/api/workouts", tags=["workouts"], dependencies=[Depends(require_onboarded_user)])
 de = FortisDecisionEngine()
@@ -32,30 +32,55 @@ def adaptation_draft(workout_id: int, data: AdaptationRequest, current_user: Use
     draft = build_time_equipment_draft(planned, catalogue, data.available_minutes, data.equipment_ids)
     rules = {r["rule_id"] for r in draft["reasons"]}
     category = "TIME_AND_EQUIPMENT" if {"TIME_CONSTRAINT", "EQUIPMENT_MISMATCH"}.issubset(rules) else "SHORTER_SESSION" if "TIME_CONSTRAINT" in rules else "EQUIPMENT_ADAPTATION" if "EQUIPMENT_MISMATCH" in rules else "NORMAL_PLAN"
-    return {"recommendation_id": f"workout-{workout.id}-{data.available_minutes}", "category": category, "title": "Adapt today's workout", "summary": "Review this proposed alternative before starting. Your saved plan stays unchanged.", "original_duration_min": workout.total_duration_min or draft["original_duration_min"], "target_duration_min": data.available_minutes, "requires_confirmation": True, **draft}
+    draft_record = WorkoutAdaptationDraft(user_id=current_user.id, source_workout_id=workout.id,
+        available_minutes=data.available_minutes, equipment_ids=data.equipment_ids, status="DRAFT")
+    db.add(draft_record); db.commit(); db.refresh(draft_record)
+    return {"recommendation_id": str(draft_record.id), "category": category, "title": "Adapt today's workout", "summary": "Review this proposed alternative before starting. Your saved plan stays unchanged.", "original_duration_min": workout.total_duration_min or draft["original_duration_min"], "target_duration_min": data.available_minutes, "requires_confirmation": True, **draft}
 
 
 @router.post("/{workout_id}/adapted-session")
-def accept_adaptation(workout_id: int, data: AdaptationRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def accept_adaptation(workout_id: int, data: AdaptationConfirmationRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    adaptation = db.query(WorkoutAdaptationDraft).filter(WorkoutAdaptationDraft.id == data.adaptation_id, WorkoutAdaptationDraft.user_id == current_user.id).first()
+    if not adaptation or adaptation.source_workout_id != workout_id:
+        raise HTTPException(status_code=404, detail="Adaptation draft not found")
+    if adaptation.status == "ACCEPTED" and adaptation.accepted_workout_id:
+        existing_session = db.query(Workout).filter(Workout.id == adaptation.accepted_workout_id, Workout.user_id == current_user.id).first()
+        if existing_session:
+            return serialize_workout(existing_session, db)
+        raise HTTPException(status_code=409, detail="Accepted session is unavailable")
+    if adaptation.status != "DRAFT":
+        raise HTTPException(status_code=409, detail="This adaptation draft is no longer available")
     workout = db.query(Workout).filter(Workout.id == workout_id, Workout.user_id == current_user.id).first()
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
     if workout.status != "PLANNED":
         raise HTTPException(status_code=409, detail="Only a planned workout can be adapted")
-    note = f"Adapted from workout {workout.id}; target {data.available_minutes}; equipment {','.join(sorted(data.equipment_ids))}"
-    duplicate = db.query(Workout).filter(Workout.user_id == current_user.id, Workout.notes == note).first()
-    if duplicate:
-        return serialize_workout(duplicate, db)
+    note = f"Adapted from workout {workout.id}; draft {adaptation.id}"
     planned = db.query(WorkoutExercise).filter(WorkoutExercise.workout_id == workout.id).order_by(WorkoutExercise.order_index).all()
-    draft = build_time_equipment_draft(planned, db.query(Exercise).all(), data.available_minutes, data.equipment_ids)
+    draft = build_time_equipment_draft(planned, db.query(Exercise).all(), adaptation.available_minutes, adaptation.equipment_ids or [])
     if not draft["exercises"]:
         raise HTTPException(status_code=422, detail="No suitable exercises are available for this adaptation")
     adapted = Workout(user_id=current_user.id, date=datetime.utcnow(), status="PLANNED", workout_type=workout.workout_type, notes=note, total_duration_min=draft["estimated_duration_min"])
     db.add(adapted); db.flush()
     for item in draft["exercises"]:
         db.add(WorkoutExercise(workout_id=adapted.id, exercise_id=item["exercise_id"], planned_sets=item["planned_sets"], planned_reps=item["planned_reps"], planned_weight_kg=item["planned_weight_kg"], order_index=item["order_index"]))
+    adaptation.status = "ACCEPTED"
+    adaptation.accepted_workout_id = adapted.id
     db.commit()
     return serialize_workout(adapted, db)
+
+
+@router.post("/{workout_id}/adaptation-drafts/{adaptation_id}/reject")
+def reject_adaptation(workout_id: int, adaptation_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    draft = db.query(WorkoutAdaptationDraft).filter(WorkoutAdaptationDraft.id == adaptation_id,
+        WorkoutAdaptationDraft.source_workout_id == workout_id, WorkoutAdaptationDraft.user_id == current_user.id).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Adaptation draft not found")
+    if draft.status == "ACCEPTED":
+        raise HTTPException(status_code=409, detail="An accepted adaptation cannot be rejected")
+    draft.status = "REJECTED"
+    db.commit()
+    return {"status": "rejected"}
 
 WORKOUT_SPLIT = {
     "STRENGTH": ["UPPER_PUSH", "LOWER", "UPPER_PULL", "FULL_BODY"],

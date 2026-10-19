@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useNavigate } from 'react-router-dom';
-import { getProfile, updateProfile, uploadAvatar } from '../../services/profileApi';
+import { getProfile, updateProfile } from '../../services/profileApi';
 import type { FullProfile, ProfileUpdateRequest } from '../../types';
 import SplashScreen from '../../components/SplashScreen';
 
@@ -308,14 +308,11 @@ export const ProfilePage: React.FC = () => {
   const field = (key: string) => (v: any) => save({ [key]: v });
 
   const updateAvatarImage = async (urlOrData: string | null) => {
+    const updated = await updateProfile({ avatar_url: urlOrData || '' });
+    setProfile(updated);
     setAvatar(urlOrData);
     store.set(avatarKey, urlOrData);
     updateUser({ avatar_url: urlOrData || undefined });
-    try {
-      await updateProfile({ avatar_url: urlOrData || '' });
-    } catch (e) {
-      console.warn('Backend avatar update notice:', e);
-    }
   };
 
   const onPhoto = async (f?: File | null) => {
@@ -325,25 +322,19 @@ export const ProfilePage: React.FC = () => {
       setPhotoErr('Choose an image file.');
       return;
     }
+    let data: string;
     try {
-      // 1. Try uploading to backend file storage first
-      try {
-        const res = await uploadAvatar(f);
-        if (res.avatar_url) {
-          await updateAvatarImage(res.avatar_url);
-          setToast('Profile image updated');
-          return;
-        }
-      } catch (uploadErr) {
-        console.warn('Upload endpoint notice, storing resized image:', uploadErr);
-      }
-
-      // 2. Resized square base64 fallback
-      const data = await resizeToSquare(f);
+      // Store a compact image with the profile instead of a temporary upload URL.
+      data = await resizeToSquare(f);
+    } catch {
+      setPhotoErr('That image could not be read. Try another.');
+      return;
+    }
+    try {
       await updateAvatarImage(data);
       setToast('Profile image updated');
     } catch {
-      setPhotoErr('That image could not be read. Try another.');
+      setPhotoErr('Profile image could not be saved. Check your connection and try again.');
     }
   };
 
