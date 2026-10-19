@@ -2,13 +2,16 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import {
   Dumbbell, CheckCircle, Play, Sparkles, AlertCircle, ChevronDown, Plus, Minus,
   Target, TrendingUp, SkipForward, Timer, Award, Flame, Battery, Activity,
-  Zap, Clock, Layers, RotateCcw,
+  Zap, Clock, Layers, RotateCcw, Wind,
 } from 'lucide-react';
 import api, { getCached } from '../../services/api';
 import SplashScreen from '../../components/SplashScreen';
+import { DecisionExplanationCard } from '../../components/fortis/DecisionExplanationCard';
 
 // ─── Types ────────────────────────────────────────────────────
 type Phase = 'overview' | 'exercise' | 'rest' | 'feedback' | 'complete';
+type Tone = 'hype' | 'calm' | 'support';
+type Checkin = 'high' | 'ok' | 'low' | null;
 
 interface ExerciseItem {
   id: number;
@@ -26,7 +29,6 @@ interface ExerciseItem {
 // ─── Images ───────────────────────────────────────────────────
 const U = (id: string) => `https://images.unsplash.com/photo-${id}?w=800&q=80`;
 
-// Exercise-specific photos (exact name match).
 const EXERCISE_IMAGES: Record<string, string> = {
   'Push-up': U('1598971639058-fab3c3109a00'), 'Knee Push-up': U('1571019614242-c5c5dee9f50b'),
   'Pike Push-up': U('1571019613454-1cb2f99b2d8b'), 'Diamond Push-up': U('1616803689943-5601631c7fec'),
@@ -42,7 +44,6 @@ const EXERCISE_IMAGES: Record<string, string> = {
   "World's Greatest Stretch": U('1544367567-0f2fcb009e0b'),
 };
 
-// Category pools: each exercise in a category gets a different photo.
 const CATEGORY_POOLS: Record<string, string[]> = {
   upper_push: ['1598971639058-fab3c3109a00', '1532029837206-abbe2b7620e3', '1581009146145-b5ef050c2e1e', '1583454110551-21f2fa2afe61', '1530822847156-5df684ec5933', '1616803689943-5601631c7fec'].map(U),
   upper_pull: ['1598266663439-2056e6900339', '1534368786749-b63e05c90863', '1581009137042-c552e485697a', '1549576490-b0b4831ef60a'].map(U),
@@ -56,8 +57,7 @@ const ALL_PHOTOS = Array.from(new Set(Object.values(CATEGORY_POOLS).flat()));
 
 const hash = (s: string) => Array.from(s).reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
-/** One image per exercise, never repeating within a session while photos remain.
- *  Priority: API image_url -> name match -> category pool -> any unused photo. */
+/** One image per exercise, never repeating within a session while photos remain. */
 function assignImages(items: ExerciseItem[]): string[] {
   const used = new Set<string>();
   return items.map((it) => {
@@ -94,28 +94,199 @@ const getGain = (m?: string[]) => MUSCLE_GAIN[m?.[0]?.toLowerCase() || ''] || MU
 
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-// ─── Coach strip ──────────────────────────────────────────────
-function Coach({ quote, compact = false }: { quote: string; compact?: boolean }) {
+// ─── Coach voice engine ───────────────────────────────────────
+// The coach reacts to what the user is doing (moment) and how they feel (tone).
+//   hype    → short, energetic
+//   calm    → low-pressure, slower, breath-first (used when energy is low)
+//   support → warm comeback after a missed session
+type Moment = 'pre' | 'exerciseStart' | 'setFirst' | 'set' | 'setHeavier' | 'exerciseDone' | 'feedback' | 'finish';
+
+const LINES: Record<Moment, Partial<Record<Tone, string[]>> & { calm: string[] }> = {
+  pre: {
+    hype: [
+      "Lights up. {n} exercises between you and a win. Let's go.",
+      'Warm body, sharp mind. Today we build something.',
+      "You showed up — that's half the fight. Now let's finish it.",
+    ],
+    calm: [
+      'No pressure today. Move well, breathe, and we call it a win.',
+      "Energy's low, so we go smooth and steady. I've got you.",
+      'Easy start. Find your rhythm and let the work come to you.',
+    ],
+    support: [
+      "Good to see you back. No guilt — we pick up right here.",
+      "Missed days happen. You're here now, and that's what counts. One set at a time.",
+      "Fresh start. I've eased today in — you just have to begin.",
+    ],
+  },
+  exerciseStart: {
+    hype: ['{name}. Control the rep, own the range.', '{name} up. Brace, breathe, drive.', 'Eyes forward. {name} — make it clean.'],
+    calm: ['{name}. Slow and smooth, no rush.', 'Settle in. Quality over speed on {name}.', 'Breathe first. Then {name}, nice and easy.'],
+  },
+  setFirst: {
+    hype: ["First one down. That's how it starts.", 'Clean opener. Now stack another.', "Rep one in the bank. Don't let up."],
+    calm: ['Nicely done. Just like that.', 'Good start. Steady breathing.', "That's it — smooth and controlled."],
+  },
+  set: {
+    hype: ['Set {done} done — {left} to go. Stay sharp.', "That's the work. Reset, go again.", 'Strong. Hold that quality on the next one.'],
+    calm: ["Good. Take your time — {left} left.", 'Well done. Shake it out, breathe.', 'Steady. No need to rush the next one.'],
+  },
+  setHeavier: {
+    hype: ["You added weight and still hit it. That's progress."],
+    calm: ["Heavier than planned, and you handled it. Lovely."],
+  },
+  exerciseDone: {
+    hype: ['{name} — crushed. Shake it out, we move.', "That's {name} done. Momentum is yours.", 'Locked in and finished. Next up.'],
+    calm: ['{name} done. Take a slow breath.', "Well done. That one's finished — easy does it.", 'Good work. Rest properly before the next.'],
+  },
+  feedback: {
+    hype: ["Be honest with me — I'll tune tomorrow around it."],
+    calm: ["Take a breath. There's no wrong answer — I just want to know how you feel."],
+  },
+  finish: {
+    hype: [
+      "That's a wrap. {sets} sets in {time}. You earned the credits.",
+      "Session closed. {sets} sets, {time}, zero excuses. Proud of that one.",
+      'Roll the credits — you did the work today.',
+    ],
+    calm: [
+      "You finished, and that's what matters. Rest well — today was enough.",
+      "Gentle work, done well. Recovery is part of the plan. I've got tomorrow.",
+      "Good session. Hydrate, breathe, sleep. I'll take it from here.",
+    ],
+  },
+};
+
+function buildLine(moment: Moment, tone: Tone, vars: Record<string, string | number> = {}, salt = 0): string {
+  const pool = LINES[moment][tone] ?? LINES[moment].calm;
+  const raw = pool[(salt + (typeof vars.name === 'string' ? hash(vars.name) : 0)) % pool.length];
+  return raw.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
+}
+
+const TONE_STYLE: Record<Tone, { color: string; label: string }> = {
+  hype: { color: '#f97316', label: 'Locked in' },
+  calm: { color: '#38bdf8', label: 'Easy does it' },
+  support: { color: '#f59e0b', label: 'Welcome back' },
+};
+
+// ─── Motion helpers ───────────────────────────────────────────
+const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+function useTypewriter(text: string, speed = 24) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (reducedMotion()) { setN(text.length); return; }
+    setN(0);
+    const id = setInterval(() => setN((v) => {
+      if (v >= text.length) { clearInterval(id); return v; }
+      return v + 1;
+    }), speed);
+    return () => clearInterval(id);
+  }, [text, speed]);
+  return text.slice(0, n);
+}
+
+function useCountUp(target: number, active: boolean, ms = 1200) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    if (reducedMotion()) { setV(target); return; }
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const p = Math.min(1, (t - t0) / ms);
+      setV(Math.round(target * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, active, ms]);
+  return v;
+}
+
+function CinematicStyles() {
   return (
-    <div className={`flex items-center gap-3 bg-dark-card border border-brand/20 rounded-2xl ${compact ? 'p-3' : 'p-4'} shadow-glow`}>
-      <div className="relative shrink-0">
-        <div className={`${compact ? 'w-10 h-10' : 'w-14 h-14'} rounded-full overflow-hidden border-2 border-brand`}>
-          <img src="/landing_imgs/coach.png" alt="Coach" className="w-full h-full object-cover object-top" />
+    <style>{`
+      @keyframes fx-kenburns { from { transform: scale(1) translate3d(0,0,0); } to { transform: scale(1.08) translate3d(-1.5%, -1%, 0); } }
+      @keyframes fx-caret { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+      @keyframes fx-bar { from { height: 0; } to { height: 9vh; } }
+      @keyframes fx-title { from { opacity: 0; transform: scale(1.18); letter-spacing: 0.5em; } to { opacity: 1; transform: scale(1); letter-spacing: 0.04em; } }
+      @keyframes fx-fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes fx-rise { 0% { transform: translateY(0) scale(1); opacity: 0; } 15% { opacity: 0.9; } 100% { transform: translateY(-105vh) scale(0.3); opacity: 0; } }
+      @keyframes fx-breathe { 0%,100% { transform: scale(0.92); opacity: 0.5; } 50% { transform: scale(1.08); opacity: 1; } }
+      .fx-kenburns { animation: fx-kenburns 18s ease-in-out infinite alternate; }
+      .fx-caret { animation: fx-caret 0.9s steps(1) infinite; }
+      .fx-bar { animation: fx-bar 1s cubic-bezier(.2,.8,.2,1) forwards; }
+      .fx-title { animation: fx-title 1.1s cubic-bezier(.2,.8,.2,1) both; }
+      .fx-fade { animation: fx-fade 0.7s ease-out both; }
+      .fx-ember { animation: fx-rise linear infinite; }
+      .fx-breathe { animation: fx-breathe 5s ease-in-out infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .fx-kenburns, .fx-ember, .fx-breathe, .fx-caret { animation: none; }
+        .fx-bar { animation: none; height: 9vh; }
+        .fx-title, .fx-fade { animation: none; }
+      }
+    `}</style>
+  );
+}
+
+// ─── Coach: cinematic stage + subtitle ────────────────────────
+function Subtitle({ text, color }: { text: string; color: string }) {
+  const typed = useTypewriter(text);
+  return (
+    <p className="text-base sm:text-lg font-semibold text-white leading-snug" aria-live="polite">
+      <span className="sr-only">{text}</span>
+      <span aria-hidden="true">{typed}<span className="fx-caret ml-0.5 inline-block w-[2px] h-[1em] align-[-0.12em]" style={{ background: color }} /></span>
+    </p>
+  );
+}
+
+/** Full-bleed coach scene. Used on the overview and the rest screen. */
+function CoachStage({ text, tone, caption, height = 'h-64 sm:h-72' }: { text: string; tone: Tone; caption?: string; height?: string }) {
+  const { color, label } = TONE_STYLE[tone];
+  return (
+    <div className={`relative ${height} rounded-3xl overflow-hidden border border-dark-border bg-black`} style={{ boxShadow: `0 0 40px -12px ${color}66` }}>
+      <img src="/landing_imgs/coach.png" alt="Coach Fortis" className="fx-kenburns absolute inset-0 w-full h-full object-cover object-top sm:object-[50%_18%] opacity-90" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-transparent" />
+      <div className="absolute inset-0 hidden sm:block bg-gradient-to-r from-black/85 via-black/30 to-transparent" />
+      <div className="absolute top-0 inset-x-0 h-3 bg-black" />
+      <div className="absolute bottom-0 inset-x-0 h-3 bg-black" />
+      <div className="absolute inset-x-0 bottom-3 p-4 sm:p-6 sm:max-w-[62%] space-y-2">
+        <div className="flex items-center gap-2 text-[11px] font-black">
+          <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+          <span style={{ color }}>Coach Fortis</span>
+          <span className="px-1.5 py-0.5 rounded border text-[10px]" style={{ color, borderColor: `${color}55`, background: `${color}1f` }}>{label}</span>
+          {caption && <span className="text-text-muted font-bold">{caption}</span>}
         </div>
-        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-success border-2 border-dark-card" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs font-black text-brand-light">Coach Fortis <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-brand/20 text-brand border border-brand/30">AI</span></p>
-        <p className="text-sm text-text-secondary leading-snug">{quote}</p>
+        <Subtitle key={text} text={text} color={color} />
       </div>
     </div>
   );
 }
 
-// ─── Set Ring: the centrepiece — one arc per set, tap to log ──
+/** Compact coach strip for in-set screens. */
+function Coach({ quote, tone = 'hype' }: { quote: string; tone?: Tone }) {
+  const { color } = TONE_STYLE[tone];
+  return (
+    <div className="flex items-center gap-3 bg-dark-card border rounded-2xl p-3" style={{ borderColor: `${color}40` }}>
+      <div className="relative shrink-0">
+        <div className="w-11 h-11 rounded-full overflow-hidden border-2" style={{ borderColor: color }}>
+          <img src="/landing_imgs/coach.png" alt="Coach" className="w-full h-full object-cover object-top" />
+        </div>
+        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-success border-2 border-dark-card" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-black" style={{ color }}>Coach Fortis</p>
+        <Subtitle key={quote} text={quote} color={color} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Set Ring ─────────────────────────────────────────────────
 function SetRing({
-  total, done, label, sub, onLog, disabled,
-}: { total: number; done: number; label: string; sub: string; onLog: () => void; disabled?: boolean }) {
+  total, done, label, sub, onLog, disabled, color,
+}: { total: number; done: number; label: string; sub: string; onLog: () => void; disabled?: boolean; color: string }) {
   const r = 78;
   const circ = 2 * Math.PI * r;
   const gap = total > 1 ? 10 : 0;
@@ -143,7 +314,7 @@ function SetRing({
           return (
             <circle
               key={i} cx="100" cy="100" r={r} fill="none" strokeWidth={active ? 14 : 12} strokeLinecap="round"
-              stroke={filled ? '#f97316' : active ? 'rgba(249,115,22,0.35)' : '#1e1e2e'}
+              stroke={filled ? color : active ? `${color}59` : '#1e1e2e'}
               strokeDasharray={`${arc} ${circ - arc}`}
               strokeDashoffset={-i * (circ / total)}
               style={{ transition: 'stroke 0.4s, stroke-width 0.2s' }}
@@ -163,7 +334,7 @@ function SetRing({
             <span className="text-4xl font-black text-white leading-none my-1">
               {done + 1}<span className="text-lg text-text-muted">/{total}</span>
             </span>
-            <span className="text-xs text-brand-light font-bold">{sub}</span>
+            <span className="text-xs font-bold" style={{ color }}>{sub}</span>
           </>
         )}
       </div>
@@ -194,7 +365,7 @@ function Stepper({ label, value, unit, step, min = 0, onChange }: {
 }
 
 // ─── Rest timer ───────────────────────────────────────────────
-function RestTimer({ onDone, seconds: start = 30 }: { onDone: () => void; seconds?: number }) {
+function RestTimer({ onDone, seconds: start = 30, color }: { onDone: () => void; seconds?: number; color: string }) {
   const [left, setLeft] = useState(start);
   const [total, setTotal] = useState(start);
   const doneRef = useRef(onDone);
@@ -217,7 +388,7 @@ function RestTimer({ onDone, seconds: start = 30 }: { onDone: () => void; second
       <div className="relative w-44 h-44">
         <svg viewBox="0 0 150 150" className="w-full h-full -rotate-90">
           <circle cx="75" cy="75" r={r} fill="none" stroke="#1e1e2e" strokeWidth="9" />
-          <circle cx="75" cy="75" r={r} fill="none" stroke="#f97316" strokeWidth="9" strokeLinecap="round"
+          <circle cx="75" cy="75" r={r} fill="none" stroke={color} strokeWidth="9" strokeLinecap="round"
             strokeDasharray={circ} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.95s linear' }} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -239,7 +410,7 @@ function RestTimer({ onDone, seconds: start = 30 }: { onDone: () => void; second
   );
 }
 
-// ─── Tap scale (replaces sliders) ─────────────────────────────
+// ─── Tap scale ────────────────────────────────────────────────
 function Scale({ label, value, onChange, icon, low, high, color }: {
   label: string; value: number; onChange: (v: number) => void; icon: React.ReactNode; low: string; high: string; color: string;
 }) {
@@ -266,54 +437,179 @@ function Scale({ label, value, onChange, icon, low, high, color }: {
   );
 }
 
+// ─── Cinematic finale ─────────────────────────────────────────
+// Beats: 1 title → 2 stats → 3 coach speaks → 4 exit. Tap anywhere to skip ahead.
+function Finale({ time, sets, totalSets, volume, rpe, line, tone, onBack }: {
+  time: number; sets: number; totalSets: number; volume: number; rpe: number; line: string; tone: Tone; onBack: () => void;
+}) {
+  const [beat, setBeat] = useState(0);
+  const { color } = TONE_STYLE[tone];
+
+  useEffect(() => {
+    const timers = [500, 1900, 3500, 5200].map((d, i) => setTimeout(() => setBeat(i + 1), d));
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  const typed = useTypewriter(beat >= 3 ? line : '', 24);
+  const setCount = useCountUp(sets, beat >= 2);
+  const volCount = useCountUp(Math.round(volume), beat >= 2);
+
+  const stats = [
+    { l: 'Time', v: fmtTime(time) },
+    { l: 'Sets', v: `${setCount}/${totalSets}` },
+    { l: 'Volume', v: `${volCount}` },
+    { l: 'Effort', v: `${rpe}/10` },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black overflow-y-auto" onClick={() => beat < 4 && setBeat(4)} role="dialog" aria-label="Workout complete">
+      <img src="/landing_imgs/coach.png" alt="" className="fx-kenburns absolute inset-0 w-full h-full object-cover object-top opacity-35" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/40" />
+      <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(circle at 50% 40%, ${color}2e, transparent 60%)` }} />
+
+      {tone === 'calm' ? (
+        <div className="absolute left-1/2 top-[34%] -translate-x-1/2 w-64 h-64 rounded-full fx-breathe pointer-events-none" style={{ background: `radial-gradient(circle, ${color}33, transparent 70%)` }} />
+      ) : (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <span key={i} className="fx-ember absolute bottom-0 rounded-full" style={{
+              left: `${(i * 61) % 100}%`, width: 3 + (i % 3), height: 3 + (i % 3), background: color,
+              boxShadow: `0 0 8px ${color}`, animationDuration: `${4 + (i % 4)}s`, animationDelay: `${(i * 0.37) % 3}s`,
+            }} />
+          ))}
+        </div>
+      )}
+
+      <div className="fx-bar fixed top-0 inset-x-0 bg-black z-10" style={{ height: 0 }} />
+      <div className="fx-bar fixed bottom-0 inset-x-0 bg-black z-10" style={{ height: 0 }} />
+
+      <div className="relative min-h-full flex flex-col items-center justify-center px-5 py-[12vh] gap-8 text-center">
+        {beat >= 1 && (
+          <div className="fx-title">
+            <p className="text-sm font-bold text-text-secondary">{tone === 'calm' ? 'Well done' : 'Session'}</p>
+            <h2 className="text-5xl sm:text-7xl font-black text-white leading-none">{tone === 'calm' ? 'Finished.' : 'Complete.'}</h2>
+          </div>
+        )}
+
+        {beat >= 2 && (
+          <div className="fx-fade grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-xl">
+            {stats.map(({ l, v }) => (
+              <div key={l} className="rounded-xl p-3 bg-black/50 backdrop-blur border" style={{ borderColor: `${color}40` }}>
+                <p className="text-[11px] text-text-muted">{l}</p>
+                <p className="text-2xl font-black text-white tabular-nums">{v}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {beat >= 3 && (
+          <div className="fx-fade w-full max-w-xl text-left rounded-2xl bg-black/60 backdrop-blur border p-4 flex gap-3" style={{ borderColor: `${color}55` }}>
+            <div className="w-12 h-12 shrink-0 rounded-full overflow-hidden border-2" style={{ borderColor: color }}>
+              <img src="/landing_imgs/coach.png" alt="" className="w-full h-full object-cover object-top" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-black mb-1" style={{ color }}>Coach Fortis</p>
+              <p className="text-base sm:text-lg font-semibold text-white leading-snug" aria-live="polite">
+                <span className="sr-only">{line}</span>
+                <span aria-hidden="true">{typed}<span className="fx-caret ml-0.5 inline-block w-[2px] h-[1em] align-[-0.12em]" style={{ background: color }} /></span>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {beat >= 4 ? (
+          <div className="fx-fade flex flex-col items-center gap-2 max-w-sm">
+            <p className="text-xs text-text-secondary">Your fitness state is updated. Tomorrow adapts to how you felt.</p>
+            <button onClick={(e) => { e.stopPropagation(); onBack(); }} className="fortis-btn-primary py-3 px-8 text-sm font-bold flex items-center gap-2">
+              <Award className="w-4 h-4" />Back to overview
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-text-muted absolute bottom-[10vh]">Tap to skip</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────
-export const WorkoutPage: React.FC = () => {
+const WorkoutInner: React.FC = () => {
   const [workout, setWorkout] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [adaptOpen, setAdaptOpen] = useState(false);
+  const [adaptMinutes, setAdaptMinutes] = useState(20);
+  const [adaptEquipment, setAdaptEquipment] = useState<string[]>(['bodyweight']);
+  const [adaptDraft, setAdaptDraft] = useState<any>(null);
+  const [comebackOpen, setComebackOpen] = useState(false);
 
   const [phase, setPhase] = useState<Phase>('overview');
   const [idx, setIdx] = useState(0);
 
-  // per-exercise live tracking
   const [setsDone, setSetsDone] = useState<number[]>([]);
   const [repsAdj, setRepsAdj] = useState<number[]>([]);
   const [weightAdj, setWeightAdj] = useState<number[]>([]);
   const [loggedVolume, setLoggedVolume] = useState(0);
 
-  // overview interactivity
   const [filter, setFilter] = useState('All');
   const [openId, setOpenId] = useState<number | null>(null);
 
-  // session clock
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [finalTime, setFinalTime] = useState(0);
 
-  // feedback
   const [rpe, setRpe] = useState(7);
   const [energy, setEnergy] = useState(7);
   const [soreness, setSoreness] = useState(4);
   const [mood, setMood] = useState(7);
   const [pain, setPain] = useState(false);
 
+  // coach state
+  const [checkin, setCheckin] = useState<Checkin>(null);
+  const [tiredNow, setTiredNow] = useState(false);
+  const [coach, setCoach] = useState<string | null>(null);
+  const [finaleLine, setFinaleLine] = useState('');
+  const [finaleTone, setFinaleTone] = useState<Tone>('hype');
+  const salt = useRef(0);
+
   const exercises: ExerciseItem[] = workout?.exercises || [];
   const current = exercises[idx];
   const images = useMemo(() => assignImages(exercises), [workout]); // eslint-disable-line react-hooks/exhaustive-deps
   const imgFor = (it?: ExerciseItem) => (it ? images[exercises.indexOf(it)] : undefined);
 
-  const fetchWorkout = () => {
-    setLoading(true); setLoadError(null);
+  // ── coach context ──
+  // Reads optional fields from the API; all are safe to be absent.
+  // A missing workout record is not evidence of a missed scheduled session.
+  const missed = false;
+  const lowEnergy = checkin === 'low' || tiredNow
+    || (typeof workout?.energy_level === 'number' && workout.energy_level <= 4)
+    || (typeof workout?.recovery_score === 'number' && workout.recovery_score < 40);
+  const tone: Tone = lowEnergy ? 'calm' : 'hype';
+  const preTone: Tone = missed ? 'support' : tone;
+  const activeColor = TONE_STYLE[tone].color;
+
+  const preLine = useMemo(
+    () => buildLine('pre', checkin === 'ok' || checkin === 'high' ? (missed ? 'support' : 'hype') : preTone, { n: exercises.length }, workout?.id ?? 0),
+    [preTone, checkin, missed, exercises.length, workout?.id], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const say = (moment: Moment, vars: Record<string, string | number> = {}, t: Tone = tone) => {
+    salt.current += 1;
+    setCoach(buildLine(moment, t, vars, salt.current));
+  };
+
+  const fetchWorkout = (silent = false) => {
+    if (!silent) setLoading(true);
+    setLoadError(null);
     getCached('/api/workouts/today')
       .then((res) => setWorkout(res.data))
-      .catch(() => { setLoadError('Unable to load scheduled workout. Please try again.'); setWorkout(null); })
+      .catch(() => { if (!silent) { setLoadError('Unable to load scheduled workout. Please try again.'); setWorkout(null); } })
       .finally(() => setLoading(false));
   };
   useEffect(() => { fetchWorkout(); }, []);
 
-  // reset trackers when exercises load
   useEffect(() => {
     setSetsDone(exercises.map(() => 0));
     setRepsAdj(exercises.map((e) => e.planned_reps));
@@ -346,23 +642,60 @@ export const WorkoutPage: React.FC = () => {
       setIdx(from);
       setStartedAt(Date.now()); setElapsed(0); setLoggedVolume(0);
       setSetsDone(exercises.map(() => 0));
+      setTiredNow(false);
+      say('exerciseStart', { name: exercises[from]?.exercise?.name || 'Exercise' });
       setPhase('exercise');
     } catch {
       setActionError('Could not start workout. Check your connection and retry.');
     } finally { setSaving(false); }
   };
 
+  const generateAdaptation = async () => {
+    if (!workout?.id) return;
+    setSaving(true); setActionError(null);
+    try { const res = await api.post(`/api/workouts/${workout.id}/adaptation-draft`, { available_minutes: adaptMinutes, equipment_ids: adaptEquipment }); setAdaptDraft(res.data); }
+    catch (e: any) { setActionError(e?.response?.data?.detail || 'Could not prepare an adaptation. Please retry.'); }
+    finally { setSaving(false); }
+  };
+
+  const acceptAdaptation = async () => {
+    if (!workout?.id) return;
+    setSaving(true); setActionError(null);
+    try { const res = await api.post(`/api/workouts/${workout.id}/adapted-session`, { available_minutes: adaptMinutes, equipment_ids: adaptEquipment }); setWorkout(res.data); setAdaptDraft(null); setAdaptOpen(false); }
+    catch (e: any) { setActionError(e?.response?.data?.detail || 'Could not save this session. Your original plan is unchanged.'); }
+    finally { setSaving(false); }
+  };
+
   const logSet = () => {
     if (!current || setsDone[idx] >= current.planned_sets) return;
+    const done = setsDone[idx] + 1;
+    const left = current.planned_sets - done;
+    const name = current.exercise.name;
+    const heavier = (weightAdj[idx] || 0) > (current.planned_weight_kg || 0) && (current.planned_weight_kg || 0) > 0;
+
+    if (left === 0) say('exerciseDone', { name });
+    else if (heavier) say('setHeavier', { name });
+    else if (done === 1) say('setFirst', { name });
+    else say('set', { name, done, left });
+
     setSetsDone((a) => a.map((v, i) => (i === idx ? v + 1 : v)));
     setLoggedVolume((v) => v + repsAdj[idx] * (weightAdj[idx] || 1));
     setPhase('rest');
   };
 
   const goNext = useCallback(() => {
-    if (idx < exercises.length - 1) { setIdx(idx + 1); setPhase('exercise'); }
-    else { setFinalTime(elapsed); setPhase('feedback'); }
-  }, [idx, exercises.length, elapsed]);
+    if (idx < exercises.length - 1) {
+      setIdx(idx + 1);
+      setPhase('exercise');
+      salt.current += 1;
+      setCoach(buildLine('exerciseStart', lowEnergy ? 'calm' : 'hype', { name: exercises[idx + 1]?.exercise?.name || 'Next up' }, salt.current));
+    } else {
+      setFinalTime(elapsed);
+      salt.current += 1;
+      setCoach(buildLine('feedback', lowEnergy ? 'calm' : 'hype', {}, salt.current));
+      setPhase('feedback');
+    }
+  }, [idx, exercises, elapsed, lowEnergy]);
 
   const handleRestDone = useCallback(() => {
     if (current && setsDone[idx] >= current.planned_sets) goNext();
@@ -379,7 +712,16 @@ export const WorkoutPage: React.FC = () => {
         overall_rpe: rpe, energy_level: energy, soreness_level: soreness, pain_flag: pain,
         difficulty_notes: `Mood: ${mood}/10. Logged ${doneSets}/${totalSets} sets across ${exercises.length} exercises.`,
       });
-      setPhase('complete'); fetchWorkout();
+      // Finale tone follows how the session actually felt.
+      const t: Tone = energy <= 4 || pain || rpe >= 9 ? 'calm' : 'hype';
+      setFinaleTone(t);
+      setFinaleLine(
+        pain
+          ? "You flagged pain, and I'm taking it seriously. Rest up — I'll protect you in the next session."
+          : buildLine('finish', t, { sets: doneSets, time: fmtTime(finalTime) }, doneSets + rpe),
+      );
+      setPhase('complete');
+      fetchWorkout(true); // silent: don't unmount the finale behind a splash screen
     } catch {
       setActionError('Feedback could not be saved. Check your connection and retry.');
     } finally { setSaving(false); }
@@ -394,47 +736,29 @@ export const WorkoutPage: React.FC = () => {
       <div className="max-w-4xl mx-auto p-4 sm:p-8 text-center space-y-3 bg-dark-card border border-dark-border rounded-2xl">
         <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
         <p className="text-sm text-text-secondary">{loadError}</p>
-        <button onClick={fetchWorkout} className="fortis-btn-primary py-2 px-5 text-xs">Try again</button>
+        <button onClick={() => fetchWorkout()} className="fortis-btn-primary py-2 px-5 text-xs">Try again</button>
       </div>
     );
   }
 
-  // ── Complete ──
+  // ── Complete: cinematic finale ──
   if (phase === 'complete') {
     return (
-      <div className="max-w-lg mx-auto space-y-5 animate-fade-in">
-        <div className="bg-dark-card border border-success/30 rounded-2xl p-8 text-center space-y-5 shadow-glow-success">
-          <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto"><Award className="w-8 h-8 text-success" /></div>
-          <h2 className="text-2xl font-black text-white">Workout complete</h2>
-          <p className="text-sm text-text-secondary max-w-sm mx-auto">Fortis has your feedback and updated your Personal Fitness State. Your next session adapts automatically.</p>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { l: 'Time', v: fmtTime(finalTime), c: 'text-white' },
-              { l: 'Sets logged', v: `${doneSets}/${totalSets}`, c: 'text-brand-light' },
-              { l: 'Volume', v: `${Math.round(loggedVolume)}`, c: 'text-white' },
-              { l: 'Effort', v: `${rpe}/10`, c: 'text-success' },
-            ].map(({ l, v, c }) => (
-              <div key={l} className="bg-dark-surface rounded-xl p-3 border border-dark-border">
-                <p className="text-[11px] text-text-muted">{l}</p>
-                <p className={`text-2xl font-black tabular-nums ${c}`}>{v}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-        <Coach quote="Excellent work. Recovery starts now — eat well, sleep well. I'll plan your next session tonight." />
-        <button onClick={() => setPhase('overview')} className="fortis-btn-secondary w-full text-sm">Back to overview</button>
-      </div>
+      <Finale time={finalTime} sets={doneSets} totalSets={totalSets} volume={loggedVolume} rpe={rpe}
+        line={finaleLine} tone={finaleTone} onBack={() => setPhase('overview')} />
     );
   }
 
   // ── Feedback ──
   if (phase === 'feedback') {
+    const fbTone: Tone = energy <= 4 ? 'calm' : 'hype';
     return (
       <div className="max-w-lg mx-auto space-y-5 animate-slide-up">
         <div className="text-center space-y-1">
           <h2 className="text-2xl font-black text-white">How did that feel?</h2>
           <p className="text-sm text-text-secondary">{doneSets} sets in {fmtTime(finalTime)}. Tap a level to tune your next session.</p>
         </div>
+        <Coach tone={fbTone} quote={coach ?? buildLine('feedback', fbTone)} />
         {actionError && <div role="alert" className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300">{actionError}</div>}
         <div className="bg-dark-card border border-dark-border rounded-2xl p-5 space-y-5 shadow-card">
           <Scale label="Difficulty (RPE)" value={rpe} onChange={setRpe} low="Easy" high="Max effort" color="#f97316" icon={<Flame className="w-4 h-4 text-brand" />} />
@@ -459,17 +783,23 @@ export const WorkoutPage: React.FC = () => {
     );
   }
 
-  // ── Rest ──
+  // ── Rest: coach reacts to the set you just logged ──
   if (phase === 'rest' && current) {
     const moreSets = setsDone[idx] < current.planned_sets;
     const next = moreSets ? current : exercises[idx + 1];
     return (
       <div className="max-w-lg mx-auto space-y-4 animate-fade-in">
-        <div className="bg-dark-card border border-brand/20 rounded-2xl p-6 shadow-glow">
-          <p className="text-center text-sm font-bold text-brand-light mb-4">
-            {moreSets ? `Set ${setsDone[idx]} of ${current.planned_sets} logged` : `${current.exercise.name} complete`}
-          </p>
-          <RestTimer onDone={handleRestDone} seconds={moreSets ? 30 : 45} />
+        <CoachStage
+          tone={tone}
+          text={coach ?? buildLine('set', tone, { done: setsDone[idx], left: current.planned_sets - setsDone[idx] })}
+          caption={moreSets ? `Set ${setsDone[idx]} of ${current.planned_sets}` : `${current.exercise.name} complete`}
+          height="h-56"
+        />
+        <div className="bg-dark-card border rounded-2xl p-6" style={{ borderColor: `${activeColor}40` }}>
+          {lowEnergy && (
+            <p className="flex items-center justify-center gap-1.5 text-xs text-sky-300 font-bold mb-4"><Wind className="w-3.5 h-3.5" />In through the nose, slow out through the mouth.</p>
+          )}
+          <RestTimer onDone={handleRestDone} seconds={(moreSets ? 30 : 45) + (lowEnergy ? 15 : 0)} color={activeColor} />
         </div>
         {next ? (
           <div className="relative h-24 rounded-xl overflow-hidden border border-dark-border">
@@ -484,7 +814,6 @@ export const WorkoutPage: React.FC = () => {
         ) : (
           <div className="bg-dark-card border border-dark-border rounded-xl p-4 text-sm text-text-secondary text-center">Last exercise done. Feedback is next.</div>
         )}
-        <Coach compact quote="Breathe slowly and hydrate. Controlled breathing speeds recovery between sets." />
       </div>
     );
   }
@@ -499,7 +828,6 @@ export const WorkoutPage: React.FC = () => {
 
     return (
       <div className="max-w-lg mx-auto space-y-4 animate-slide-up">
-        {/* Session bar: clickable exercise rail + clock */}
         <div className="space-y-2">
           <div className="flex justify-between items-center text-xs text-text-muted font-bold">
             <span>Exercise {idx + 1} of {exercises.length}</span>
@@ -516,7 +844,8 @@ export const WorkoutPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Hero */}
+        <Coach tone={tone} quote={coach ?? buildLine('exerciseStart', tone, { name: ex.name })} />
+
         <div className="relative h-44 rounded-2xl overflow-hidden border border-dark-border bg-dark-surface">
           <img key={ex.id} src={imgFor(current)} alt={ex.name} className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-dark-bg via-dark-bg/40 to-transparent" />
@@ -534,23 +863,29 @@ export const WorkoutPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Ring + steppers */}
         <div className="bg-dark-card border border-dark-border rounded-2xl p-5 space-y-5 shadow-card">
-          <SetRing total={current.planned_sets} done={done} disabled={allDone}
+          <SetRing total={current.planned_sets} done={done} disabled={allDone} color={activeColor}
             label={`Log set ${done + 1} of ${current.planned_sets}`}
             sub={`${reps} reps${weight ? ` · ${weight}kg` : ''}`} onLog={logSet} />
           <div className="grid grid-cols-2 gap-2.5">
             <Stepper label="Reps" value={reps} step={1} min={1} onChange={(v) => setRepsAdj((a) => a.map((x, i) => (i === idx ? v : x)))} />
             <Stepper label="Weight" value={weight} unit="kg" step={2.5} onChange={(v) => setWeightAdj((a) => a.map((x, i) => (i === idx ? v : x)))} />
           </div>
-          {done > 0 && !allDone && (
-            <button onClick={undoSet} className="mx-auto flex items-center gap-1.5 text-xs text-text-muted hover:text-white transition">
-              <RotateCcw className="w-3 h-3" />Undo last set
+          <div className="flex items-center justify-center gap-4">
+            {done > 0 && !allDone && (
+              <button onClick={undoSet} className="flex items-center gap-1.5 text-xs text-text-muted hover:text-white transition">
+                <RotateCcw className="w-3 h-3" />Undo last set
+              </button>
+            )}
+            <button
+              onClick={() => { const next = !tiredNow; setTiredNow(next); say('exerciseStart', { name: ex.name }, next ? 'calm' : 'hype'); }}
+              aria-pressed={tiredNow}
+              className={`flex items-center gap-1.5 text-xs transition ${tiredNow ? 'text-sky-300' : 'text-text-muted hover:text-white'}`}>
+              <Battery className="w-3 h-3" />{tiredNow ? 'Easy mode on' : 'Running low?'}
             </button>
-          )}
+          </div>
         </div>
 
-        {/* Details */}
         <div className="bg-dark-card border border-dark-border rounded-2xl p-4 space-y-3">
           <p className="text-xs text-brand-light font-semibold">{current.adaptation_note || 'Full range of motion. Quality over speed.'}</p>
           <div className="flex items-start gap-3">
@@ -584,6 +919,10 @@ export const WorkoutPage: React.FC = () => {
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => filter === 'All' || item.exercise?.muscle_groups?.some((m) => m === filter));
 
+  const CHECKINS: { id: Exclude<Checkin, null>; label: string }[] = [
+    { id: 'high', label: 'Fired up' }, { id: 'ok', label: 'Okay' }, { id: 'low', label: 'Running low' },
+  ];
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -609,7 +948,47 @@ export const WorkoutPage: React.FC = () => {
 
       {actionError && <div role="alert" className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300">{actionError}</div>}
 
-      {/* Session at a glance */}
+      {/* Cinematic coach opening: adapts to energy and missed sessions */}
+      <CoachStage tone={preTone} text={preLine} caption={missed ? 'Comeback session' : undefined} />
+
+      {workout?.status !== 'COMPLETED' && exercises.length > 0 && (
+        <section className="rounded-2xl border border-dark-border bg-dark-card p-4">
+          {!comebackOpen ? <button onClick={() => setComebackOpen(true)} className="text-sm font-bold text-brand-light">Help me get back on track</button> : <div className="space-y-3">
+            <div><h2 className="font-black text-white">Every return counts.</h2><p className="text-xs text-text-secondary">Your routine can change. Let's find a realistic next step.</p><p className="text-xs text-text-muted mt-1">{workout.workout_type || 'Your planned session'} · {exercises.length} exercises · no extra sessions added</p></div>
+            <p className="text-sm text-text-secondary">Getting back into your routine starts with one manageable step.</p>
+            <div className="flex flex-wrap gap-2"><button onClick={() => setComebackOpen(false)} className="fortis-btn-secondary px-3 py-2 text-xs">Resume my plan</button><button onClick={() => {setAdaptOpen(true);setAdaptMinutes((workout?.estimated_duration_min || 40) > 20 ? 20 : 15);setComebackOpen(false);}} className="fortis-btn-secondary px-3 py-2 text-xs">Start a shorter session</button><button onClick={() => setComebackOpen(false)} className="fortis-btn-secondary px-3 py-2 text-xs">Take more time</button></div>
+            <button onClick={() => setComebackOpen(false)} className="text-xs text-text-muted underline">Close</button>
+          </div>}
+        </section>
+      )}
+
+      {workout?.status !== 'COMPLETED' && exercises.length > 0 && (
+        <div className="space-y-3">
+          {!adaptOpen && <button onClick={() => { setAdaptOpen(true); setAdaptDraft(null); }} className="fortis-btn-secondary w-full py-3 font-bold text-sm">ADAPT TODAY'S WORKOUT</button>}
+          {adaptOpen && !adaptDraft && <section className="rounded-2xl border border-dark-border bg-dark-card p-5 space-y-4">
+            <div><h2 className="text-lg font-black text-white">Time &amp; equipment switch</h2><p className="text-xs text-text-muted">Build a reviewable draft. Your saved plan stays unchanged.</p></div>
+            <fieldset><legend className="text-xs font-bold text-text-secondary mb-2">Available time</legend><div className="flex flex-wrap gap-2">{[10,15,20,30,45].map((n) => <button key={n} aria-pressed={adaptMinutes===n} onClick={() => setAdaptMinutes(n)} className={`rounded-full border px-3 py-1.5 text-xs ${adaptMinutes===n?'border-brand bg-brand/20 text-white':'border-dark-border text-text-secondary'}`}>{n} min</button>)}</div></fieldset>
+            <fieldset><legend className="text-xs font-bold text-text-secondary mb-2">Available equipment</legend><div className="flex flex-wrap gap-2">{[['bodyweight','Bodyweight only'],['dumbbells','Dumbbells'],['resistance_bands','Resistance bands'],['exercise_mat','Exercise mat'],['pull_up_bar','Pull-up bar'],['bench','Bench'],['full_gym','Full gym']].map(([id,label]) => <button key={id} aria-pressed={adaptEquipment.includes(id)} onClick={() => setAdaptEquipment(id==='full_gym'?['full_gym']:id==='bodyweight'?(adaptEquipment.length===1&&adaptEquipment[0]==='bodyweight'?[]: ['bodyweight']):adaptEquipment.filter(x=>x!=='bodyweight'&&x!=='full_gym').includes(id)?adaptEquipment.filter(x=>x!==id):[...adaptEquipment.filter(x=>x!=='full_gym'),id])} className={`rounded-full border px-3 py-1.5 text-xs ${adaptEquipment.includes(id)?'border-brand bg-brand/20 text-white':'border-dark-border text-text-secondary'}`}>{label}</button>)}</div></fieldset>
+            <div className="flex gap-2"><button onClick={generateAdaptation} disabled={saving||adaptEquipment.length===0} className="fortis-btn-primary flex-1 py-2.5 text-sm">{saving?'Preparing…':'Review adaptation'}</button><button onClick={()=>setAdaptOpen(false)} className="fortis-btn-secondary px-4 py-2.5 text-sm">Cancel</button></div>
+          </section>}
+          {adaptOpen && adaptDraft && <DecisionExplanationCard draft={adaptDraft} busy={saving} onAccept={acceptAdaptation} onKeep={()=>{setAdaptDraft(null);setAdaptOpen(false);}} />}
+        </div>
+      )}
+
+      {workout?.status !== 'COMPLETED' && exercises.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="How is your energy today?">
+          <span className="text-xs font-bold text-text-muted mr-1">Energy today</span>
+          {CHECKINS.map((c) => (
+            <button key={c.id} role="radio" aria-checked={checkin === c.id} onClick={() => setCheckin(c.id)}
+              className={`text-xs font-bold px-3.5 py-1.5 rounded-full border transition ${checkin === c.id
+                ? (c.id === 'low' ? 'bg-sky-400/20 text-sky-200 border-sky-400/50' : 'bg-brand text-white border-brand')
+                : 'bg-dark-card text-text-secondary border-dark-border hover:border-brand/40'}`}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-3">
         {[
           { icon: <Clock className="w-4 h-4" />, v: plannedMin != null ? `${plannedMin}` : '—', l: 'minutes' },
@@ -623,8 +1002,6 @@ export const WorkoutPage: React.FC = () => {
         ))}
       </div>
 
-      <Coach quote={`I've programmed ${exercises.length} exercises for today's ${workout?.workout_type || 'session'}, matched to your recovery and fitness state. Tap any exercise to preview it, or start from where you like.`} />
-
       {exercises.length === 0 ? (
         <div className="bg-dark-card border border-dark-border rounded-xl p-8 text-center space-y-2">
           <Dumbbell className="w-8 h-8 text-text-muted mx-auto opacity-50" />
@@ -633,7 +1010,6 @@ export const WorkoutPage: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Muscle filter chips */}
           <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Filter by muscle group">
             {muscleFilters.map((m) => (
               <button key={m} role="tab" aria-selected={filter === m} onClick={() => setFilter(m)}
@@ -643,7 +1019,6 @@ export const WorkoutPage: React.FC = () => {
             ))}
           </div>
 
-          {/* Exercise route */}
           <ol className="relative space-y-3 pl-0 sm:pl-8">
             <span className="hidden sm:block absolute left-[11px] top-2 bottom-2 w-px bg-gradient-to-b from-brand/60 via-dark-border to-transparent" />
             {visible.map(({ item, index }) => {
@@ -675,7 +1050,6 @@ export const WorkoutPage: React.FC = () => {
                       </div>
                     </button>
 
-                    {/* Expandable details */}
                     <div className={`grid transition-all duration-300 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                       <div className="overflow-hidden">
                         <div className="p-4 pt-0 space-y-3 border-t border-dark-border/60">
@@ -710,5 +1084,12 @@ export const WorkoutPage: React.FC = () => {
     </div>
   );
 };
+
+export const WorkoutPage: React.FC = () => (
+  <>
+    <CinematicStyles />
+    <WorkoutInner />
+  </>
+);
 
 export default WorkoutPage;

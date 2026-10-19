@@ -1,6 +1,32 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
+from typing import Literal
+
+
+class AdaptationRequest(BaseModel):
+    available_minutes: int = Field(ge=10, le=120)
+    equipment_ids: List[Literal["bodyweight", "dumbbells", "resistance_bands", "exercise_mat", "pull_up_bar", "bench", "full_gym"]] = Field(default_factory=lambda: ["bodyweight"], min_length=1, max_length=7)
+
+
+class DecisionReason(BaseModel):
+    rule_id: Literal["TIME_CONSTRAINT", "EQUIPMENT_MISMATCH", "PLAN_UNAVAILABLE", "SUITABLE_PLAN"]
+    label: str
+    detail: str
+
+
+class AdaptationDraftResponse(BaseModel):
+    recommendation_id: str
+    category: Literal["SHORTER_SESSION", "EQUIPMENT_ADAPTATION", "TIME_AND_EQUIPMENT", "NORMAL_PLAN"]
+    title: str
+    summary: str
+    reasons: List[DecisionReason]
+    original_duration_min: int
+    target_duration_min: int
+    estimated_duration_min: int
+    exercises: List[dict]
+    changes: List[str]
+    requires_confirmation: bool = True
 
 
 class ExerciseResponse(BaseModel):
