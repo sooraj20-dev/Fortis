@@ -207,7 +207,7 @@ async def send_message(
     # Get AI response
     try:
         provider = get_ai_provider()
-        response = await provider.complete(messages)
+        response = await provider.complete(messages, max_tokens=1024)
     except AIProviderError:
         response = AIResponse(content="Coach unavailable, using fallback.", finish_reason="error")
 
@@ -224,4 +224,7 @@ async def send_message(
     session.updated_at = datetime.utcnow()
     db.commit()
 
-    return {"candidates": [{"output": response.content, "finish_reason": response.finish_reason}]}
+    return {
+        "content": response.content,
+        "candidates": [{"output": response.content, "finish_reason": response.finish_reason}],
+    }

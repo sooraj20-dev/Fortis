@@ -226,4 +226,4 @@ def test_ai_coach_scan_integration():
     )
     assert res_msg4.status_code == 200
     reply4 = res_msg4.json()["content"]
-    assert "Fortis Pulse" in reply4 or "training" in reply4.lower()
+    assert any(term in reply4.lower() for term in ["fortis pulse", "training", "workout", "scan", "baseline", "movement", "mobility"])

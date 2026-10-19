@@ -117,7 +117,7 @@ async def analyze_images_json(
     *,
     response_schema: Optional[Type[BaseModel]] = None,
     max_tokens: int = 1500,
-    max_output_token_cap: int = 900,
+    max_output_token_cap: int = 2048,
     thinking_level: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Use the configured Gemini Flash model to analyze images and return validated JSON."""
@@ -150,42 +150,63 @@ async def analyze_images_json(
         for image_bytes, mime_type in processed_images
     )
 
-    model_name = settings.GEMINI_MODEL
+    candidate_models = [settings.GEMINI_MODEL]
+    if settings.GEMINI_MODEL != "test-model":
+        for fallback in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-flash-latest"]:
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
+
     last_error = None
     response = None
 
-    for attempt in range(2):
-        try:
-            config_kwargs: Dict[str, Any] = {
-                "response_mime_type": "application/json",
-                "max_output_tokens": min(max_tokens, max_output_token_cap),
-            }
-            if thinking_level is not None:
-                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_level)
-            elif not model_name.startswith(("gemini-3.6", "gemini-3.7", "gemini-3.8", "gemini-4")):
-                config_kwargs["temperature"] = 0.1
-            if response_schema:
-                config_kwargs["response_schema"] = response_schema
+    for model_name in candidate_models:
+        for attempt in range(2):
+            try:
+                config_kwargs: Dict[str, Any] = {
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": min(max_tokens, max_output_token_cap),
+                }
+                if thinking_level is not None:
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_level)
+                elif not model_name.startswith(("gemini-3.6", "gemini-3.7", "gemini-3.8", "gemini-4")):
+                    config_kwargs["temperature"] = 0.1
+                if response_schema:
+                    config_kwargs["response_schema"] = response_schema
 
-            response = await client.aio.models.generate_content(
-                model=model_name,
-                contents=parts,
-                config=types.GenerateContentConfig(**config_kwargs),
-            )
+                response = await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=parts,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+                break
+            except Exception as exc:
+                status = getattr(exc, "code", None)
+                logger.warning("Gemini vision attempt %d with model %s failed: type=%s status=%s", attempt + 1, model_name, type(exc).__name__, status)
+                if last_error is None or status is not None:
+                    last_error = exc
+                if status in (400, 401, 403):
+                    break
+                if status in (503, 404):
+                    break
+                if status == 429:
+                    error_payload = _error_payload(exc)
+                    kind = _rate_limit_kind(exc, error_payload)
+                    if kind == "daily":
+                        break
+                    retry_delay = _retry_after_seconds(exc, error_payload)
+                    if attempt == 0 and kind == "transient" and (retry_delay is None or retry_delay <= 60):
+                        base_delay = retry_delay if retry_delay is not None else min(0.5 * (2 ** attempt), 8.0)
+                        await asyncio.sleep(base_delay + random.uniform(0.0, 0.25))
+                        continue
+                break
+        if response is not None:
             break
-        except Exception as exc:
-            status = getattr(exc, "code", None)
-            logger.warning("Gemini vision attempt %d failed: type=%s status=%s", attempt + 1, type(exc).__name__, status)
-            last_error = exc
-            if attempt == 0 and status == 429:
-                error_payload = _error_payload(exc)
-                kind = _rate_limit_kind(exc, error_payload)
-                retry_delay = _retry_after_seconds(exc, error_payload)
-                if kind == "transient" and (retry_delay is None or retry_delay <= 60):
-                    base_delay = retry_delay if retry_delay is not None else min(0.5 * (2 ** attempt), 8.0)
-                    await asyncio.sleep(base_delay + random.uniform(0.0, 0.25))
-                    continue
+        if getattr(last_error, "code", None) in (400, 401, 403):
             break
+        if getattr(last_error, "code", None) == 429:
+            error_payload = _error_payload(last_error)
+            if _rate_limit_kind(last_error, error_payload) == "daily":
+                break
 
     if response is None:
         status = getattr(last_error, "code", None) if last_error else None
@@ -206,6 +227,7 @@ async def analyze_images_json(
             detail = "Gemini vision service is experiencing high demand. Please retry in a few moments."
         else:
             detail = "Gemini vision request failed. Check backend network and Gemini API configuration."
+
         raise AIProviderError(detail) from last_error
 
     text = response.text or ""

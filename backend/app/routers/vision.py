@@ -128,7 +128,13 @@ feedback (3 concise evidence-based observations), primary_improvement (one actio
 visual_evidence (brief description of what is actually visible).
 Do not claim angles, repetition counts, pain, or movement defects that are not visible. If the body or exercise is unclear,
 set form_score to null, confidence below 0.4, and explain what needs to be reframed."""
-    return await analyze_images_json(prompt, images, max_tokens=1200)
+    return await analyze_images_json(
+        prompt,
+        images,
+        max_tokens=1500,
+        max_output_token_cap=2048,
+        thinking_level="low",
+    )
 
 
 from pydantic import BaseModel, Field
@@ -187,12 +193,13 @@ async def analyze_exercise_form(
     if file.size and file.size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large")
 
-    allowed_types = ["video/mp4", "video/mov", "video/avi", "video/quicktime", "video/x-msvideo"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type}")
+    allowed_types = ["video/mp4", "video/mov", "video/avi", "video/quicktime", "video/x-msvideo", "video/webm"]
+    allowed_extensions = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".mp4"
+    if file.content_type not in allowed_types and ext not in allowed_extensions:
+        raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type or ext}")
 
     # Save the upload only while it is being analyzed.
-    ext = os.path.splitext(file.filename)[1] if file.filename else ".mp4"
     filename = f"{uuid.uuid4()}{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
     content = await file.read(settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024 + 1)
@@ -218,7 +225,8 @@ async def analyze_exercise_form(
 
     score = analysis.get("form_score")
     if not isinstance(score, (int, float)):
-        raise HTTPException(status_code=422, detail="The exercise could not be assessed clearly. Re-record with your full body visible and the camera steady.")
+        detail_msg = analysis.get("primary_improvement") or "The exercise could not be assessed clearly. Re-record with your full body visible and the camera steady."
+        raise HTTPException(status_code=422, detail=detail_msg)
     score = round(max(0.0, min(100.0, float(score))), 1)
     raw_breakdown = analysis.get("breakdown") if isinstance(analysis.get("breakdown"), dict) else {}
     breakdown = {

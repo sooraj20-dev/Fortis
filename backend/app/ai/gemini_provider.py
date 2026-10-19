@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import re
 from typing import Dict, List, Optional
 
 from app.ai.provider import AIProvider, AIProviderError, AIResponse
@@ -15,7 +16,7 @@ class GeminiProvider(AIProvider):
         self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict]] = None,
-        max_tokens: int = 256,
+        max_tokens: int = 1024,
     ) -> AIResponse:
         del tools  # The Coach currently uses grounded text responses, not function tools.
         system_parts = []
@@ -55,48 +56,78 @@ class GeminiProvider(AIProvider):
         from google.genai import types
 
         client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=45_000))
-        model_name = settings.GEMINI_MODEL
+        
+        # Build list of candidate models with fallbacks for high demand / outages
+        candidate_models = [settings.GEMINI_MODEL]
+        if settings.GEMINI_MODEL != "test-model":
+            for fallback in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-flash-latest"]:
+                if fallback not in candidate_models:
+                    candidate_models.append(fallback)
 
         last_error = None
-        for attempt in range(2):
-            try:
-                response = await client.aio.models.generate_content(
-                    model=model_name,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction="\n\n".join(system_parts) if system_parts else None,
-                        max_output_tokens=min(max_tokens, 256),
-                        response_mime_type="application/json",
-                        thinking_config=types.ThinkingConfig(thinking_level="low"),
-                    ),
-                )
-                if response.text and response.text.strip():
-                    try:
-                        envelope = json.loads(response.text)
-                        candidate = envelope["candidates"][0]
-                        output = candidate["output"]
-                        finish_reason = candidate.get("finish_reason", "stop")
-                        if isinstance(output, str) and output.strip() and finish_reason == "stop":
-                            return AIResponse(content=output.strip(), finish_reason="stop")
-                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                        pass
-                logger.warning("Gemini Coach returned an empty or invalid JSON envelope")
-                return AIResponse(content=FALLBACK_RESPONSE, finish_reason="error")
-            except AIProviderError:
-                raise
-            except Exception as exc:
-                status = getattr(exc, "code", None)
-                logger.warning(
-                    "Gemini Coach attempt %d failed: type=%s status=%s detail=%s",
-                    attempt + 1, type(exc).__name__, status, str(exc)[:1000],
-                )
-                last_error = exc
-                if (isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or status in (408, 429, 500, 502, 503, 504)) and attempt == 0:
-                    await asyncio.sleep(0.5)
-                    continue
+        for model_name in candidate_models:
+            for attempt in range(2):
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction="\n\n".join(system_parts) if system_parts else None,
+                            max_output_tokens=min(max_tokens, 256),
+                            response_mime_type="application/json",
+                            thinking_config=types.ThinkingConfig(thinking_level="low"),
+                        ),
+                    )
+                    raw_text = (response.text or "").strip()
+                    if raw_text:
+                        # Strip any markdown code fences
+                        cleaned = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
+                        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+
+                        # 1. Try standard JSON envelope parsing
+                        try:
+                            envelope = json.loads(cleaned)
+                            if isinstance(envelope, dict):
+                                candidates = envelope.get("candidates")
+                                if isinstance(candidates, list) and len(candidates) > 0 and isinstance(candidates[0], dict):
+                                    output = candidates[0].get("output")
+                                    if isinstance(output, str) and output.strip():
+                                        return AIResponse(content=output.strip(), finish_reason="stop")
+                                for key in ("output", "response", "message", "coach_response"):
+                                    if key in envelope and isinstance(envelope[key], str) and envelope[key].strip():
+                                        return AIResponse(content=envelope[key].strip(), finish_reason="stop")
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+                        # 2. If valid text is present outside of JSON envelope, use it directly
+                        if cleaned and not cleaned.startswith("{"):
+                            return AIResponse(content=cleaned, finish_reason="stop")
+
+                    logger.warning("Gemini Coach model %s returned an unparseable response: %s", model_name, raw_text[:200])
+                except AIProviderError:
+                    raise
+                except Exception as exc:
+                    status = getattr(exc, "code", None)
+                    logger.warning(
+                        "Gemini Coach attempt %d with %s failed: type=%s status=%s detail=%s",
+                        attempt + 1, model_name, type(exc).__name__, status, str(exc)[:500],
+                    )
+                    if last_error is None or status is not None:
+                        last_error = exc
+                    # Do not retry on client errors
+                    if status in (400, 401, 403):
+                        break
+                    # If model is unavailable (503) or not found (404), move to next candidate model
+                    if status in (503, 404):
+                        break
+                    if (isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or status in (408, 429, 500, 502, 504)) and attempt == 0:
+                        await asyncio.sleep(0.5)
+                        continue
+                    break
+            if getattr(last_error, "code", None) in (400, 401, 403):
                 break
 
-        # Return the required JSON-envelope fallback after retries are exhausted.
+        # Return the required fallback after all candidate models and retries are exhausted.
         status = getattr(last_error, "code", None) if last_error else None
         if status == 400:
             detail = "Gemini rejected the Coach request. Check the configured model and request data."
@@ -105,8 +136,9 @@ class GeminiProvider(AIProvider):
         elif status == 429:
             detail = "Gemini rate limit or quota reached. Please retry in a few moments."
         elif status == 503:
-            detail = "Gemini service is temporarily experiencing high demand. Please try again in a few moments."
+            detail = "Gemini service is temporarily experiencing high demand across models. Please try again in a few moments."
         else:
             detail = "Gemini Coach request failed. Check backend network access and the Gemini API configuration."
-        logger.error("Gemini Coach unavailable after retries: %s", detail)
+        logger.error("Gemini Coach unavailable after model fallbacks and retries: %s", detail)
         return AIResponse(content=FALLBACK_RESPONSE, finish_reason="error")
+
