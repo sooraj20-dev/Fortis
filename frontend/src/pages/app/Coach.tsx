@@ -288,7 +288,7 @@ export const CoachPage: React.FC = () => {
   const hasUserMsg = messages.some((m) => m.role === 'user');
 
   return (
-    <div className="max-w-4xl mx-auto h-[calc(100dvh-140px)] min-h-[480px] flex flex-col bg-dark-card border border-dark-border rounded-2xl sm:rounded-3xl overflow-hidden shadow-card">
+    <div className="max-w-4xl mx-auto h-[calc(100dvh-140px)] min-h-[360px] sm:min-h-[480px] flex flex-col bg-dark-card border border-dark-border rounded-2xl sm:rounded-3xl overflow-hidden shadow-card">
       <style>{`
         @keyframes coach-dot { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-5px); opacity: 1; } }
         @keyframes coach-ring { 0% { transform: scale(.9); opacity: .9; } 100% { transform: scale(1.45); opacity: 0; } }

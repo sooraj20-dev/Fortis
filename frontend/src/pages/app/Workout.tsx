@@ -391,7 +391,7 @@ export const WorkoutPage: React.FC = () => {
   }
   if (loadError) {
     return (
-      <div className="max-w-4xl mx-auto p-8 text-center space-y-3 bg-dark-card border border-dark-border rounded-2xl">
+      <div className="max-w-4xl mx-auto p-4 sm:p-8 text-center space-y-3 bg-dark-card border border-dark-border rounded-2xl">
         <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
         <p className="text-sm text-text-secondary">{loadError}</p>
         <button onClick={fetchWorkout} className="fortis-btn-primary py-2 px-5 text-xs">Try again</button>
@@ -610,7 +610,7 @@ export const WorkoutPage: React.FC = () => {
       {actionError && <div role="alert" className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300">{actionError}</div>}
 
       {/* Session at a glance */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-3">
         {[
           { icon: <Clock className="w-4 h-4" />, v: plannedMin != null ? `${plannedMin}` : '—', l: 'minutes' },
           { icon: <Dumbbell className="w-4 h-4" />, v: `${exercises.length}`, l: 'exercises' },

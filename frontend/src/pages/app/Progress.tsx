@@ -74,7 +74,7 @@ export const ProgressPage: React.FC = () => {
       </div>
 
       {/* Trajectory Forecast */}
-      <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-card space-y-4">
+      <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-card space-y-4">
         <div className="flex items-center gap-2 border-b border-dark-border pb-3">
           <Sparkles className="w-5 h-5 text-brand-light" />
           <h2 className="text-lg font-bold text-white">Fortis Pulse Statistical Trajectory</h2>
@@ -87,7 +87,7 @@ export const ProgressPage: React.FC = () => {
                 <span className="text-xs text-text-muted block">Projected 7-Day Trend</span>
                 <span className="text-xl font-bold text-white capitalize">{data.forecast.trend_label || 'stable'} trajectory</span>
               </div>
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3 sm:gap-6">
                 <div>
                   <span className="text-xs text-text-muted block">7-Day Projection</span>
                   <span className="text-lg font-bold text-emerald-400">{data.forecast.forecast_7d ?? '--'}</span>
@@ -112,14 +112,14 @@ export const ProgressPage: React.FC = () => {
       </div>
 
       {/* Fitness State Progression Timeline */}
-      <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-card space-y-4">
+      <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-card space-y-4">
         <h2 className="text-base font-bold text-white border-b border-dark-border pb-3">Historical Pulse Timeline</h2>
         {data?.fitness_state_history && data.fitness_state_history.length > 0 ? (
           <div className="space-y-2">
             {data.fitness_state_history.map((item: any, i: number) => (
-              <div key={i} className="flex justify-between items-center p-3 bg-dark-surface rounded-lg text-xs">
+              <div key={i} className="flex flex-col min-[420px]:flex-row min-[420px]:justify-between min-[420px]:items-center gap-2 p-3 bg-dark-surface rounded-lg text-xs">
                 <span className="font-medium text-white">{item.date}</span>
-                <div className="flex gap-4">
+                <div className="flex gap-3 sm:gap-4">
                   <span>Pulse: <strong className="text-brand-light">{item.fortis_pulse}</strong></span>
                   <span>Fatigue Risk: <strong className="text-warning">{item.fatigue_risk}%</strong></span>
                 </div>

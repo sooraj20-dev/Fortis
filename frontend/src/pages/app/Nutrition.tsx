@@ -13,6 +13,23 @@ const REGIONS = [
 ];
 const BUDGET_PRESETS = [80, 120, 150, 200, 300];
 const MEAL_ORDER = ['breakfast', 'lunch', 'snack', 'snacks', 'dinner'];
+const SCHEDULE_MEALS = [
+  { id: 'breakfast', label: 'Breakfast', time: '08:00' },
+  { id: 'lunch', label: 'Lunch', time: '13:00' },
+  { id: 'snack', label: 'Snack', time: '16:30' },
+  { id: 'dinner', label: 'Dinner', time: '20:00' },
+];
+type MealScheduleEntry = { time: string; items: { id: string; text: string; done: boolean }[] };
+type MealSchedule = Record<string, MealScheduleEntry>;
+const scheduleStorageKey = () => {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return `fortis-nutrition-schedule-${today}`;
+};
+const defaultMealSchedule = (): MealSchedule => Object.fromEntries(SCHEDULE_MEALS.map(({ id, label, time }) => [id, {
+  time,
+  items: [{ id: `${id}-plan`, text: `Plan ${label.toLowerCase()}`, done: false }],
+}]));
 
 const num = (v: any) => (typeof v === 'number' ? v : parseFloat(v) || 0);
 const rupee = (v: any) => `₹${Math.round(num(v) * 100) / 100}`;
@@ -87,6 +104,17 @@ export const NutritionPage: React.FC = () => {
   const [groceryLoading, setGroceryLoading] = useState(false);
   const [groceryError, setGroceryError] = useState<string | null>(null);
   const [got, setGot] = useState<Set<number>>(new Set());
+  const [mealSchedule, setMealSchedule] = useState<MealSchedule>(() => {
+    try {
+      const saved = localStorage.getItem(scheduleStorageKey());
+      return saved ? { ...defaultMealSchedule(), ...JSON.parse(saved) } : defaultMealSchedule();
+    } catch { return defaultMealSchedule(); }
+  });
+  const [newChecklistItem, setNewChecklistItem] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    try { localStorage.setItem(scheduleStorageKey(), JSON.stringify(mealSchedule)); } catch { /* storage may be unavailable */ }
+  }, [mealSchedule]);
 
   const loadSummary = useCallback(() => {
     setLoading(true); setLoadError(false);
@@ -100,10 +128,6 @@ export const NutritionPage: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => { loadSummary(); }, [loadSummary]);
-
-  if (loading && !summary && !loadError) {
-    return <SplashScreen isLoader message="Loading your nutrition summary…" />;
-  }
 
   const handleOptimize = () => {
     setOptimizing(true); setOptError(null); setGroceryList(null);
@@ -164,6 +188,19 @@ export const NutritionPage: React.FC = () => {
 
   const remainingCost = groceryList?.items?.reduce((a: number, it: any, i: number) => (got.has(i) ? a : a + num(it.estimated_cost_inr)), 0) ?? 0;
   const regionLabel = REGIONS.find((r) => r.id === region)?.label || region;
+  const updateScheduleEntry = (mealId: string, update: (entry: MealScheduleEntry) => MealScheduleEntry) => {
+    setMealSchedule((current) => ({ ...current, [mealId]: update(current[mealId] || { time: '12:00', items: [] }) }));
+  };
+  const addChecklistItem = (mealId: string) => {
+    const text = (newChecklistItem[mealId] || '').trim();
+    if (!text) return;
+    updateScheduleEntry(mealId, (entry) => ({ ...entry, items: [...entry.items, { id: `${mealId}-${Date.now()}`, text, done: false }] }));
+    setNewChecklistItem((current) => ({ ...current, [mealId]: '' }));
+  };
+
+  if (loading && !summary && !loadError) {
+    return <SplashScreen isLoader message="Loading your nutrition summary…" />;
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
@@ -356,6 +393,52 @@ export const NutritionPage: React.FC = () => {
             {got.size > 0 && <button onClick={() => setGot(new Set())} className="text-xs text-text-muted hover:text-white flex items-center gap-1"><RotateCcw className="w-3 h-3" />Clear ticks</button>}
           </div>
         )}
+      </section>
+
+      {/* ── Daily meal schedule ── */}
+      <section className="bg-dark-card border border-dark-border rounded-3xl p-4 sm:p-7 shadow-card space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-black text-white">Daily meal schedule</h2>
+            <p className="text-xs text-text-muted mt-1">Set meal times and check off what you plan to eat.</p>
+          </div>
+          <span className="text-xs text-text-secondary">
+            {Object.values(mealSchedule).reduce((total, meal) => total + meal.items.filter((item) => item.done).length, 0)} of {Object.values(mealSchedule).reduce((total, meal) => total + meal.items.length, 0)} checked
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {SCHEDULE_MEALS.map(({ id, label }) => {
+            const entry = mealSchedule[id] || { time: '12:00', items: [] };
+            return (
+              <div key={id} className="min-w-0 rounded-2xl border border-dark-border bg-dark-surface p-3.5 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-white">{label}</h3>
+                  <label className="flex items-center gap-2 text-xs text-text-muted">
+                    <span>Time</span>
+                    <input type="time" aria-label={`${label} time`} value={entry.time} onChange={(event) => updateScheduleEntry(id, (current) => ({ ...current, time: event.target.value }))}
+                      className="bg-dark-card border border-dark-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand" />
+                  </label>
+                </div>
+                <ul className="space-y-2">
+                  {entry.items.map((item) => (
+                    <li key={item.id} className="flex items-center gap-2 text-sm min-w-0">
+                      <input type="checkbox" checked={item.done} onChange={() => updateScheduleEntry(id, (current) => ({ ...current, items: current.items.map((candidate) => candidate.id === item.id ? { ...candidate, done: !candidate.done } : candidate) }))}
+                        className="h-4 w-4 shrink-0 accent-emerald-400" aria-label={`Mark ${item.text} for ${label} complete`} />
+                      <span className={`min-w-0 flex-1 break-words ${item.done ? 'text-text-muted line-through' : 'text-text-secondary'}`}>{item.text}</span>
+                      <button type="button" onClick={() => updateScheduleEntry(id, (current) => ({ ...current, items: current.items.filter((candidate) => candidate.id !== item.id) }))}
+                        className="shrink-0 text-xs text-text-muted hover:text-danger" aria-label={`Remove ${item.text}`}>Remove</button>
+                    </li>
+                  ))}
+                </ul>
+                <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); addChecklistItem(id); }}>
+                  <input value={newChecklistItem[id] || ''} onChange={(event) => setNewChecklistItem((current) => ({ ...current, [id]: event.target.value }))}
+                    placeholder="Add food or task" aria-label={`New ${label} checklist item`} className="fortis-input !text-sm !py-2 min-w-0" />
+                  <button type="submit" disabled={!(newChecklistItem[id] || '').trim()} className="fortis-btn-secondary !px-3 !py-2 text-xs disabled:opacity-50">Add</button>
+                </form>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {/* ── Today's logs ── */}

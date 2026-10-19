@@ -105,12 +105,13 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 md:ml-60 flex flex-col min-h-screen pb-20 md:pb-6">
-        <header className="h-14 border-b border-dark-border px-6 flex items-center justify-between bg-dark-bg/80 backdrop-blur sticky top-0 z-10">
+      <main className="flex-1 min-w-0 w-full md:ml-60 flex flex-col min-h-screen pb-20 md:pb-6">
+        <header className="min-h-14 border-b border-dark-border px-3 sm:px-6 py-2 flex items-center justify-between gap-2 bg-dark-bg/80 backdrop-blur sticky top-0 z-10">
           <div className="flex items-center gap-2">
             <span className={`h-1.5 w-1.5 rounded-full ${apiOnline === true ? 'bg-success' : apiOnline === false ? 'bg-danger' : 'bg-warning'}`} />
-            <span className="text-xs font-semibold text-text-secondary tracking-wide" aria-live="polite">
-              {apiOnline === true ? 'Fortis API Online' : apiOnline === false ? 'Fortis API Offline' : 'Checking Fortis API…'}
+            <span className="text-[11px] sm:text-xs font-semibold text-text-secondary tracking-wide" aria-live="polite">
+              <span className="sm:hidden">{apiOnline === true ? 'API Online' : apiOnline === false ? 'API Offline' : 'Checking API…'}</span>
+              <span className="hidden sm:inline">{apiOnline === true ? 'Fortis API Online' : apiOnline === false ? 'Fortis API Offline' : 'Checking Fortis API…'}</span>
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -132,19 +133,19 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
             </button>
           </div>
         </header>
-        <div className="p-4 sm:p-6 lg:p-8 flex-1">{children}</div>
+        <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8 flex-1">{children}</div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-dark-surface/95 backdrop-blur border-t border-dark-border flex items-center justify-around px-2 z-30">
-        {navItems.slice(0, 5).map((item) => {
+      <nav aria-label="Main navigation" className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-dark-surface/95 backdrop-blur border-t border-dark-border flex items-center gap-1 px-2 z-30 overflow-x-auto hide-scrollbar">
+        {navItems.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center w-14 h-full gap-1 ${
+                `flex flex-col items-center justify-center flex-none w-[64px] h-full gap-1 ${
                   isActive ? 'text-brand-light' : 'text-text-muted'
                 }`
               }

@@ -113,7 +113,7 @@ const ScanProcessing: React.FC = () => {
         transition={{ delay: 0.2 }}
         className="bg-dark-card border border-dark-border rounded-3xl overflow-hidden"
       >
-        <div className="px-6 pt-5 pb-3">
+        <div className="px-4 sm:px-6 pt-5 pb-3">
           <p className="overline-brand">Vision Pipeline</p>
         </div>
         {STEPS.map((step, i) => {
@@ -125,7 +125,7 @@ const ScanProcessing: React.FC = () => {
               initial={{ opacity: 0, x: -6 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.25 + i * 0.06 }}
-              className={`flex items-start gap-4 px-6 py-4 border-b border-dark-border/50 last:border-b-0
+              className={`flex items-start gap-3 sm:gap-4 px-4 sm:px-6 py-4 border-b border-dark-border/50 last:border-b-0
                 transition-opacity ${completedSteps < i - 1 ? 'opacity-25' : 'opacity-100'}`}
             >
               {/* Icon */}

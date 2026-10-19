@@ -161,6 +161,7 @@ async def _analyze_food_with_gemini(image_bytes: bytes, mime_type: str) -> dict:
     prompt = """Identify the visible food and estimate nutrition for the entire visible serving. Specialize in Indian and Kerala cuisine.
 Return a validated JSON object with: food_name, region, confidence (0-1), serving_description, serving_g (integer),
 calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, alternatives (array of name/confidence), is_healthy (boolean), brief_note.
+Respond with one concise JSON object only, without markdown; keep brief_note short.
 Estimate portions conservatively from visible size; these are estimates, not laboratory measurements. If food is unclear,
 use food_name 'Unidentified Food Item' and confidence below 0.5. Do not invent ingredients that cannot be seen."""
     return await analyze_images_json(
@@ -168,6 +169,8 @@ use food_name 'Unidentified Food Item' and confidence below 0.5. Do not invent i
         [(image_bytes, mime_type)],
         response_schema=FoodAnalysisSchema,
         max_tokens=1500,
+        max_output_token_cap=2048,
+        thinking_level="low",
     )
 
 

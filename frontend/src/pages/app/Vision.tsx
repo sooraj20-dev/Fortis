@@ -245,7 +245,7 @@ export const VisionPage: React.FC = () => {
                 onClick={() => foodInput.current?.click()}
                 role="button" tabIndex={0}
                 onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && foodInput.current?.click()}
-                className={`cursor-pointer text-center px-6 py-14 space-y-4 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${dragOver ? 'bg-brand/10' : 'bg-dark-card hover:bg-dark-hover'}`}
+                className={`cursor-pointer text-center px-4 sm:px-6 py-8 sm:py-14 space-y-4 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${dragOver ? 'bg-brand/10' : 'bg-dark-card hover:bg-dark-hover'}`}
               >
                 <div className={`w-16 h-16 mx-auto rounded-full bg-dark-surface border flex items-center justify-center text-brand-light transition-all ${dragOver ? 'border-brand scale-110' : 'border-dark-border'}`}>
                   {dragOver ? <Sparkles className="w-8 h-8" /> : <Camera className="w-8 h-8" />}
@@ -421,7 +421,7 @@ export const VisionPage: React.FC = () => {
                 onClick={() => videoInput.current?.click()}
                 role="button" tabIndex={0}
                 onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && videoInput.current?.click()}
-                className={`cursor-pointer text-center px-6 py-12 space-y-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${videoDrag ? 'bg-brand/10' : 'bg-dark-card hover:bg-dark-hover'}`}>
+                className={`cursor-pointer text-center px-4 sm:px-6 py-8 sm:py-12 space-y-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${videoDrag ? 'bg-brand/10' : 'bg-dark-card hover:bg-dark-hover'}`}>
                 <div className="w-14 h-14 mx-auto rounded-full bg-dark-surface border border-dark-border flex items-center justify-center text-brand-light"><Video className="w-7 h-7" /></div>
                 <h3 className="text-lg font-black text-white">{videoDrag ? 'Release to analyse' : 'Drop a clip of your set'}</h3>
                 <p className="text-xs text-text-muted max-w-sm mx-auto">Film from the side with your whole body in frame. A few reps is enough.</p>

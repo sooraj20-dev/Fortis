@@ -73,7 +73,7 @@ const ScanHistory: React.FC = () => {
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden bg-dark-card border border-dark-border rounded-3xl p-12 text-center"
+          className="relative overflow-hidden bg-dark-card border border-dark-border rounded-3xl p-6 sm:p-12 text-center"
         >
           <div className="absolute inset-0 bg-radial-orange pointer-events-none" />
           <div
@@ -127,10 +127,10 @@ const ScanHistory: React.FC = () => {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.12 + i * 0.05 }}
                 onClick={() => navigate('/scan/result', { state: { scanId: sId } })}
-                className="flex items-center justify-between px-6 py-5 border-b border-dark-border/50 last:border-b-0
+                className="flex items-center justify-between gap-2 px-3 sm:px-6 py-4 sm:py-5 border-b border-dark-border/50 last:border-b-0
                            hover:bg-dark-hover/40 cursor-pointer transition-colors group"
               >
-                <div className="flex items-center gap-5">
+                <div className="flex items-center gap-2 sm:gap-5 min-w-0">
                   {/* Score block */}
                   <div className="w-14 text-center shrink-0">
                     <span
@@ -145,7 +145,7 @@ const ScanHistory: React.FC = () => {
                   </div>
 
                   {/* Progress bar + info */}
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-white mb-1">{date}</p>
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="flex items-center gap-1 text-[11px] text-text-muted">

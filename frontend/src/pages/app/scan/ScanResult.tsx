@@ -343,14 +343,14 @@ const ScanResult: React.FC = () => {
           transition={{ delay: 0.35 }}
           className="bg-dark-card border border-dark-border rounded-3xl overflow-hidden"
         >
-          <div className="px-6 pt-5 pb-3">
+          <div className="px-4 sm:px-6 pt-5 pb-3">
             <p className="overline-brand">Detail Metrics</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2">
             {scan.metrics.map((m, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between px-6 py-3.5 border-b border-dark-border/50 last:border-b-0"
+                className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-dark-border/50 last:border-b-0"
               >
                 <div>
                   <p className="text-xs font-semibold text-text-primary">

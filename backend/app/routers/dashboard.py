@@ -172,7 +172,7 @@ def get_dashboard(current_user: User = Depends(get_current_user), db: Session = 
         "height_cm": profile.height_cm if profile else None,
         "weight_kg": profile.weight_kg if profile else None,
         "age": profile.age if profile else None,
-        "regional_preference": profile.regional_preference if profile else None,
+        "regional_preference": nutr_pref.regional_preference if nutr_pref else None,
     }
 
     return {
