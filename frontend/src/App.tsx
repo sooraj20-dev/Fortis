@@ -24,6 +24,7 @@ const ScanResult     = lazy(() => import('./pages/app/scan/ScanResult'));
 const ScanBlueprint  = lazy(() => import('./pages/app/scan/ScanBlueprint'));
 const ScanHistory    = lazy(() => import('./pages/app/scan/ScanHistory'));
 const ScanComparison = lazy(() => import('./pages/app/scan/ScanComparison'));
+const UsagePage      = lazy(() => import('./pages/app/Usage'));
 
 // â”€â”€ Page transition loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PageLoader = () => <SplashScreen isLoader message="Loading your Fortis workspace…" />;
@@ -258,6 +259,17 @@ function App() {
           />
 
           {/* â”€â”€ Root & Wildcard redirects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          <Route
+            path="/usage"
+            element={
+              <RequireOnboarding>
+                <AppLayout>
+                  <UsagePage />
+                </AppLayout>
+              </RequireOnboarding>
+            }
+          />
+
           <Route
             path="/"
             element={

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Dumbbell, CheckCircle, Play, Sparkles, AlertCircle, ChevronDown, Plus, Minus,
   Target, TrendingUp, SkipForward, Timer, Award, Flame, Battery, Activity,
-  Zap, Clock, Layers, RotateCcw, Wind,
+  Zap, Clock, Layers, RotateCcw, Wind, Youtube,
 } from 'lucide-react';
 import api, { getCached } from '../../services/api';
 import SplashScreen from '../../components/SplashScreen';
@@ -19,6 +19,7 @@ interface ExerciseItem {
   exercise: {
     id: number; name: string; muscle_groups: string[]; equipment_required: string[];
     difficulty: string; instructions: string; category: string; image_url?: string;
+    demo_url?: string;
   };
   planned_sets: number;
   planned_reps: number;
@@ -28,49 +29,57 @@ interface ExerciseItem {
 }
 
 // ─── Images ───────────────────────────────────────────────────
-const U = (id: string) => `https://images.unsplash.com/photo-${id}?w=800&q=80`;
-
-const EXERCISE_IMAGES: Record<string, string> = {
-  'Push-up': U('1598971639058-fab3c3109a00'), 'Knee Push-up': U('1571019614242-c5c5dee9f50b'),
-  'Pike Push-up': U('1571019613454-1cb2f99b2d8b'), 'Diamond Push-up': U('1616803689943-5601631c7fec'),
-  'Dumbbell Floor Press': U('1532029837206-abbe2b7620e3'), 'Dumbbell Shoulder Press': U('1581009146145-b5ef050c2e1e'),
-  'Lateral Raise': U('1583454110551-21f2fa2afe61'), 'Tricep Dip': U('1530822847156-5df684ec5933'),
-  'Pull-up': U('1598266663439-2056e6900339'), 'Dumbbell Row': U('1534368786749-b63e05c90863'),
-  'Dumbbell Bicep Curl': U('1581009137042-c552e485697a'), 'Resistance Band Row': U('1549576490-b0b4831ef60a'),
-  'Bodyweight Squat': U('1566241142559-40e1dab266c6'), 'Romanian Deadlift': U('1517963628607-235ccdd5476c'),
-  'Reverse Lunge': U('1574680096145-d05b474e2155'), 'Glute Bridge': U('1601422407692-ec4eeec1d9b3'),
-  'Step-up': U('1607962837359-5e7e89f86776'), 'Calf Raise': U('1547919307-1ecb10702e6f'),
-  'Wall Sit': U('1434682881908-b43d0467b798'), 'Plank': U('1571019614242-c5c5dee9f50b'),
-  'Jumping Jack': U('1476480862126-209bfaa8edc8'), 'Jump Rope (Simulated)': U('1518611012118-696072aa579a'),
-  "World's Greatest Stretch": U('1544367567-0f2fcb009e0b'),
+// RepDB serves exercise-specific illustrations directly from its public dataset.
+const REPDB_DATASET_URL = 'https://exercise-dataset.com/exercises.json';
+const REPDB_IMAGE_BASE = 'https://exercise-dataset.com/';
+const REPDB_IMAGE_ALIASES: Record<string, string> = {
+  'Knee Push-up': 'Knee Push Ups',
+  'Pike Push-up': 'Pike Push Ups',
+  'Diamond Push-up': 'Diamond Push Ups',
+  'Lateral Raise': 'Dumbbell Lateral Raise',
+  'Front Raise': 'Dumbbell Front Raise',
+  'Tricep Dip': 'Bench Dip',
+  'Dumbbell Row': 'One Arm Dumbbell Row',
+  'Hammer Curl': 'Dumbbell Hammer Curl',
+  'Face Pull (Band)': 'Band Face Pull',
+  'Resistance Band Row': 'Band Seated Row',
+  'Jump Rope (Simulated)': 'Jump Rope',
+  'Hip Thrust (Dumbbell)': 'Dumbbell Hip Thrust',
+  'Thruster (Dumbbell)': 'Dumbbell Thruster',
+  'Romanian Deadlift': 'Dumbbell Romanian Deadlift',
+  'Reverse Lunge': 'Bodyweight Reverse Lunge',
+  'Calf Raise': 'Standing Calf Raise',
+};
+const normalizeExerciseName = (name: string) => {
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return normalized.endsWith('s') ? normalized.slice(0, -1) : normalized;
 };
 
-const CATEGORY_POOLS: Record<string, string[]> = {
-  upper_push: ['1598971639058-fab3c3109a00', '1532029837206-abbe2b7620e3', '1581009146145-b5ef050c2e1e', '1583454110551-21f2fa2afe61', '1530822847156-5df684ec5933', '1616803689943-5601631c7fec'].map(U),
-  upper_pull: ['1598266663439-2056e6900339', '1534368786749-b63e05c90863', '1581009137042-c552e485697a', '1549576490-b0b4831ef60a'].map(U),
-  lower: ['1566241142559-40e1dab266c6', '1574680096145-d05b474e2155', '1517963628607-235ccdd5476c', '1607962837359-5e7e89f86776', '1547919307-1ecb10702e6f', '1601422407692-ec4eeec1d9b3'].map(U),
-  core: ['1571019614242-c5c5dee9f50b', '1571019613454-1cb2f99b2d8b', '1601422407692-ec4eeec1d9b3', '1434682881908-b43d0467b798'].map(U),
-  compound: ['1517963628607-235ccdd5476c', '1532029837206-abbe2b7620e3', '1434682881908-b43d0467b798', '1476480862126-209bfaa8edc8'].map(U),
-  cardio: ['1476480862126-209bfaa8edc8', '1518611012118-696072aa579a', '1434682881908-b43d0467b798'].map(U),
-  mobility: ['1544367567-0f2fcb009e0b', '1534438327276-14e5300c3a48'].map(U),
+const LEGACY_IMAGE_FALLBACKS: Record<string, string> = {
+  'Push-up': 'https://images.unsplash.com/photo-1598971639058-fab3c3109a00?w=800&q=80',
+  'Bodyweight Squat': 'https://images.unsplash.com/photo-1566241142559-40e1dab266c6?w=800&q=80',
+  'Plank': 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80',
 };
-const ALL_PHOTOS = Array.from(new Set(Object.values(CATEGORY_POOLS).flat()));
+
+const getExerciseDemoUrl = (exercise?: ExerciseItem['exercise']) => {
+  if (exercise?.demo_url) return exercise.demo_url;
+  if (!exercise?.name) return undefined;
+  const query = `${exercise.name} exercise proper form demonstration`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+};
 
 const hash = (s: string) => Array.from(s).reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
-/** One image per exercise, never repeating within a session while photos remain. */
-function assignImages(items: ExerciseItem[]): string[] {
-  const used = new Set<string>();
-  return items.map((it) => {
-    const ex = it.exercise;
-    const pool = CATEGORY_POOLS[ex?.category?.toLowerCase() || ''] || ALL_PHOTOS;
-    const off = hash(ex?.name || '') % pool.length;
-    const rotated = [...pool.slice(off), ...pool.slice(0, off)];
-    const candidates = [ex?.image_url, EXERCISE_IMAGES[ex?.name], ...rotated, ...ALL_PHOTOS].filter(Boolean) as string[];
-    const pick = candidates.find((c) => !used.has(c)) || candidates[0];
-    used.add(pick);
-    return pick;
-  });
+function resolveExerciseImage(name: string, imageIndex: Record<string, string>) {
+  const key = normalizeExerciseName(name);
+  const aliasKey = normalizeExerciseName(REPDB_IMAGE_ALIASES[name] || '');
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return imageIndex[key] || imageIndex[aliasKey] || `${REPDB_IMAGE_BASE}images/flat/${slug}-peak.webp`;
+}
+
+function handleImageFallback(event: React.SyntheticEvent<HTMLImageElement>, name: string) {
+  event.currentTarget.onerror = null;
+  event.currentTarget.src = LEGACY_IMAGE_FALLBACKS[name] || '/landing_imgs/hero.png';
 }
 
 const MUSCLE_GAIN: Record<string, string> = {
@@ -537,6 +546,7 @@ function Finale({ time, sets, totalSets, volume, rpe, line, tone, onBack }: {
 const WorkoutInner: React.FC = () => {
   const navigate = useNavigate();
   const [workout, setWorkout] = useState<any>(null);
+  const [repDbImages, setRepDbImages] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -578,7 +588,28 @@ const WorkoutInner: React.FC = () => {
 
   const exercises: ExerciseItem[] = workout?.exercises || [];
   const current = exercises[idx];
-  const images = useMemo(() => assignImages(exercises), [workout]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(REPDB_DATASET_URL, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('Could not load the exercise image catalog');
+        return response.json();
+      })
+      .then((catalog: { exercises?: Array<{ name_en?: string; images?: { flat?: Record<string, string> } }> }) => {
+        const imageIndex: Record<string, string> = {};
+        catalog.exercises?.forEach((exercise) => {
+          const path = exercise.images?.flat?.peak || exercise.images?.flat?.main || exercise.images?.flat?.start;
+          if (exercise.name_en && path) imageIndex[normalizeExerciseName(exercise.name_en)] = new URL(path, REPDB_IMAGE_BASE).toString();
+        });
+        setRepDbImages(imageIndex);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+  const images = useMemo(
+    () => exercises.map((item) => item.exercise?.image_url || resolveExerciseImage(item.exercise?.name || '', repDbImages)),
+    [exercises, repDbImages],
+  );
   const imgFor = (it?: ExerciseItem) => (it ? images[exercises.indexOf(it)] : undefined);
 
   // ── coach context ──
@@ -806,7 +837,7 @@ const WorkoutInner: React.FC = () => {
         </div>
         {next ? (
           <div className="relative h-24 rounded-xl overflow-hidden border border-dark-border">
-            <img src={imgFor(next)} alt="" className="w-full h-full object-cover opacity-50" />
+            <img src={imgFor(next)} alt="" onError={(event) => handleImageFallback(event, next.exercise?.name || '')} className="w-full h-full object-cover opacity-50" />
             <div className="absolute inset-0 bg-gradient-to-r from-dark-card via-dark-card/60 to-transparent" />
             <div className="absolute inset-0 flex flex-col justify-center px-4">
               <p className="text-xs text-text-muted font-bold">{moreSets ? `Next: set ${setsDone[idx] + 1}` : 'Up next'}</p>
@@ -850,7 +881,7 @@ const WorkoutInner: React.FC = () => {
         <Coach tone={tone} quote={coach ?? buildLine('exerciseStart', tone, { name: ex.name })} />
 
         <div className="relative h-44 rounded-2xl overflow-hidden border border-dark-border bg-dark-surface">
-          <img key={ex.id} src={imgFor(current)} alt={ex.name} className="w-full h-full object-cover" />
+          <img key={ex.id} src={imgFor(current)} alt={ex.name} onError={(event) => handleImageFallback(event, ex.name)} className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-dark-bg via-dark-bg/40 to-transparent" />
           <span className={`absolute top-3 left-3 text-[10px] font-black px-2.5 py-1 rounded-full border ${
             ex.difficulty === 'BEGINNER' ? 'bg-success/20 text-success border-success/30'
@@ -900,6 +931,13 @@ const WorkoutInner: React.FC = () => {
               <Target className="w-4 h-4 text-text-muted mt-0.5 shrink-0" />
               <p className="text-sm text-text-secondary leading-relaxed">{ex.instructions}</p>
             </div>
+          )}
+          {getExerciseDemoUrl(ex) && (
+            <a href={getExerciseDemoUrl(ex)} target="_blank" rel="noopener noreferrer"
+              aria-label={`Find a ${ex.name} demo video on YouTube`}
+              className="fortis-btn-secondary w-full py-2.5 text-sm flex items-center justify-center gap-2">
+              <Youtube className="w-4 h-4 text-red-400" />Find demo video on YouTube
+            </a>
           )}
         </div>
 
@@ -1034,7 +1072,7 @@ const WorkoutInner: React.FC = () => {
                     <button onClick={() => setOpenId(open ? null : item.id ?? index)} aria-expanded={open}
                       className="w-full flex items-stretch text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
                       <div className="relative w-24 sm:w-32 shrink-0 overflow-hidden">
-                        <img src={imgFor(item)} alt="" loading="lazy"
+                        <img src={imgFor(item)} alt="" loading="lazy" onError={(event) => handleImageFallback(event, ex?.name || '')}
                           className={`w-full h-full object-cover transition-transform duration-500 ${open ? 'scale-110' : ''}`} />
                         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-dark-card/50" />
                       </div>
@@ -1060,6 +1098,13 @@ const WorkoutInner: React.FC = () => {
                             <p className="mt-3 text-xs text-brand-light font-medium bg-brand/10 px-2.5 py-1.5 rounded-lg border border-brand/20">{item.adaptation_note}</p>
                           )}
                           {ex?.instructions && <p className="pt-2 text-sm text-text-secondary leading-relaxed">{ex.instructions}</p>}
+                          {getExerciseDemoUrl(ex) && (
+                            <a href={getExerciseDemoUrl(ex)} target="_blank" rel="noopener noreferrer"
+                              aria-label={`Find a ${ex.name} demo video on YouTube`}
+                              className="fortis-btn-secondary text-xs py-2 px-4 inline-flex items-center gap-1.5">
+                              <Youtube className="w-3.5 h-3.5 text-red-400" />Find demo video on YouTube
+                            </a>
+                          )}
                           <div className="flex flex-wrap gap-1.5">
                             {ex?.muscle_groups?.map((m) => (
                               <span key={m} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand/10 text-brand-light border border-brand/20">{m}</span>
@@ -1084,6 +1129,9 @@ const WorkoutInner: React.FC = () => {
           </ol>
         </>
       )}
+      <p className="text-center text-[11px] text-text-muted">
+        Exercise data by <a href="https://repdb.co" target="_blank" rel="noopener noreferrer" className="underline hover:text-text-secondary">RepDB (repdb.co)</a>
+      </p>
     </div>
   );
 };

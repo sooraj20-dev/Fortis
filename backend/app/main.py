@@ -49,6 +49,12 @@ async def lifespan(app: FastAPI):
         mongo_db["body_scans"].create_index([("user_id", 1), ("scan_date", -1)])
         mongo_db["exercises"].create_index("difficulty")
         mongo_db["exercises"].create_index("category")
+
+        # AI usage tracking indexes
+        mongo_db["ai_usage_logs"].create_index([("user_id", 1), ("started_at", -1)])
+        mongo_db["ai_usage_logs"].create_index([("user_id", 1), ("feature", 1), ("started_at", -1)])
+        mongo_db["ai_usage_logs"].create_index([("user_id", 1), ("status", 1), ("started_at", -1)])
+        mongo_db["ai_usage_logs"].create_index("request_id", unique=True, sparse=True)
     except Exception as e:
         logger.error(f"MongoDB Atlas startup check/index error: {e}")
 
@@ -115,7 +121,7 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 # Include all routers
-from app.routers import auth, profile, dashboard, workouts, nutrition, recovery, fitness_state, coach, progress, vision, scan  # noqa
+from app.routers import auth, profile, dashboard, workouts, nutrition, recovery, fitness_state, coach, progress, vision, scan, usage  # noqa
 
 app.include_router(auth.router)
 app.include_router(profile.router)
@@ -128,6 +134,7 @@ app.include_router(coach.router)
 app.include_router(progress.router)
 app.include_router(vision.router)
 app.include_router(scan.router)
+app.include_router(usage.router)
 
 
 @app.get("/health", tags=["system"])

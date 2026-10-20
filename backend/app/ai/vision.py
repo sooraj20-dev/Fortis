@@ -12,7 +12,6 @@ from pydantic import BaseModel
 
 from app.ai.provider import AIProviderError
 from app.config import settings, get_gemini_api_key
-
 logger = logging.getLogger(__name__)
 
 
@@ -119,6 +118,8 @@ async def analyze_images_json(
     max_tokens: int = 1500,
     max_output_token_cap: int = 2048,
     thinking_level: Optional[str] = None,
+    feature: str = "fortis_vision",
+    user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Use the configured Gemini Flash model to analyze images and return validated JSON."""
     api_key = get_gemini_api_key()
@@ -158,6 +159,10 @@ async def analyze_images_json(
 
     last_error = None
     response = None
+    final_model = candidate_models[0]
+
+    # Record the start time before the first outbound attempt
+    started_at = datetime.utcnow()
 
     for model_name in candidate_models:
         for attempt in range(2):
@@ -178,6 +183,7 @@ async def analyze_images_json(
                     contents=parts,
                     config=types.GenerateContentConfig(**config_kwargs),
                 )
+                final_model = model_name
                 break
             except Exception as exc:
                 status = getattr(exc, "code", None)
@@ -228,6 +234,16 @@ async def analyze_images_json(
         else:
             detail = "Gemini vision request failed. Check backend network and Gemini API configuration."
 
+        # Fire-and-forget usage tracking for failure
+        _fire_vision_record(
+            user_id=user_id,
+            feature=feature,
+            model=final_model,
+            started_at=started_at,
+            status="rate_limited" if status == 429 else "failed",
+            exc=last_error,
+            http_status_code=status,
+        )
         raise AIProviderError(detail) from last_error
 
     text = response.text or ""
@@ -273,4 +289,46 @@ async def analyze_images_json(
         except Exception as exc:
             logger.warning("Gemini vision response failed schema validation: schema=%s", response_schema.__name__)
             raise AIProviderError("Gemini returned analysis that did not match the required food schema. Please retry.") from exc
+
+    # Fire-and-forget usage tracking for success
+    _fire_vision_record(
+        user_id=user_id,
+        feature=feature,
+        model=final_model,
+        started_at=started_at,
+        status="success",
+        usage_metadata=getattr(response, "usage_metadata", None),
+    )
     return result
+
+
+def _fire_vision_record(
+    *,
+    user_id: Optional[int],
+    feature: str,
+    model: str,
+    started_at: datetime,
+    status: str,
+    usage_metadata=None,
+    exc: Optional[Exception] = None,
+    http_status_code: Optional[int] = None,
+) -> None:
+    """Schedule a fire-and-forget usage record for vision calls. Never raises."""
+    try:
+        from app.services.usage_tracker import usage_tracker
+        completed_at = datetime.utcnow()
+        asyncio.create_task(
+            usage_tracker.record_attempt(
+                user_id=user_id,
+                feature=feature,
+                model=model,
+                started_at=started_at,
+                completed_at=completed_at,
+                status=status,
+                usage_metadata=usage_metadata,
+                exc=exc,
+                http_status_code=http_status_code,
+            )
+        )
+    except Exception:
+        pass  # Analytics must never break vision responses

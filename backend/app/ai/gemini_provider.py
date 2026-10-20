@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime
 from typing import Dict, List, Optional
 
 from app.ai.provider import AIProvider, AIProviderError, AIResponse
@@ -17,6 +18,7 @@ class GeminiProvider(AIProvider):
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict]] = None,
         max_tokens: int = 1024,
+        user_id: Optional[int] = None,
     ) -> AIResponse:
         del tools  # The Coach currently uses grounded text responses, not function tools.
         system_parts = []
@@ -65,6 +67,12 @@ class GeminiProvider(AIProvider):
                     candidate_models.append(fallback)
 
         last_error = None
+        final_response = None
+        final_model = candidate_models[0]
+
+        # Track the start of the first outbound attempt
+        started_at = datetime.utcnow()
+
         for model_name in candidate_models:
             for attempt in range(2):
                 try:
@@ -92,15 +100,45 @@ class GeminiProvider(AIProvider):
                                 if isinstance(candidates, list) and len(candidates) > 0 and isinstance(candidates[0], dict):
                                     output = candidates[0].get("output")
                                     if isinstance(output, str) and output.strip():
+                                        final_response = response
+                                        final_model = model_name
+                                        _fire_record(
+                                            user_id=user_id,
+                                            feature="ai_coach",
+                                            model=model_name,
+                                            started_at=started_at,
+                                            status="success",
+                                            usage_metadata=getattr(response, "usage_metadata", None),
+                                        )
                                         return AIResponse(content=output.strip(), finish_reason="stop")
                                 for key in ("output", "response", "message", "coach_response"):
                                     if key in envelope and isinstance(envelope[key], str) and envelope[key].strip():
+                                        final_response = response
+                                        final_model = model_name
+                                        _fire_record(
+                                            user_id=user_id,
+                                            feature="ai_coach",
+                                            model=model_name,
+                                            started_at=started_at,
+                                            status="success",
+                                            usage_metadata=getattr(response, "usage_metadata", None),
+                                        )
                                         return AIResponse(content=envelope[key].strip(), finish_reason="stop")
                         except (json.JSONDecodeError, TypeError):
                             pass
 
                         # 2. If valid text is present outside of JSON envelope, use it directly
                         if cleaned and not cleaned.startswith("{"):
+                            final_response = response
+                            final_model = model_name
+                            _fire_record(
+                                user_id=user_id,
+                                feature="ai_coach",
+                                model=model_name,
+                                started_at=started_at,
+                                status="success",
+                                usage_metadata=getattr(response, "usage_metadata", None),
+                            )
                             return AIResponse(content=cleaned, finish_reason="stop")
 
                     logger.warning("Gemini Coach model %s returned an unparseable response: %s", model_name, raw_text[:200])
@@ -128,17 +166,63 @@ class GeminiProvider(AIProvider):
                 break
 
         # Return the required fallback after all candidate models and retries are exhausted.
-        status = getattr(last_error, "code", None) if last_error else None
-        if status == 400:
+        status_code = getattr(last_error, "code", None) if last_error else None
+        if status_code == 400:
             detail = "Gemini rejected the Coach request. Check the configured model and request data."
-        elif status in (401, 403):
+            track_status = "failed"
+        elif status_code in (401, 403):
             detail = "Gemini rejected the API key or the key does not have model access."
-        elif status == 429:
+            track_status = "failed"
+        elif status_code == 429:
             detail = "Gemini rate limit or quota reached. Please retry in a few moments."
-        elif status == 503:
+            track_status = "rate_limited"
+        elif status_code == 503:
             detail = "Gemini service is temporarily experiencing high demand across models. Please try again in a few moments."
+            track_status = "failed"
         else:
             detail = "Gemini Coach request failed. Check backend network access and the Gemini API configuration."
+            track_status = "failed"
         logger.error("Gemini Coach unavailable after model fallbacks and retries: %s", detail)
+
+        _fire_record(
+            user_id=user_id,
+            feature="ai_coach",
+            model=final_model,
+            started_at=started_at,
+            status=track_status,
+            exc=last_error,
+            http_status_code=status_code,
+        )
         return AIResponse(content=FALLBACK_RESPONSE, finish_reason="error")
 
+
+def _fire_record(
+    *,
+    user_id: Optional[int],
+    feature: str,
+    model: str,
+    started_at: datetime,
+    status: str,
+    usage_metadata=None,
+    exc: Optional[Exception] = None,
+    http_status_code: Optional[int] = None,
+) -> None:
+    """Schedule a fire-and-forget usage record. Never raises."""
+    try:
+        from app.services.usage_tracker import usage_tracker
+        completed_at = datetime.utcnow()
+        asyncio.create_task(
+            usage_tracker.record_attempt(
+                user_id=user_id,
+                feature=feature,
+                model=model,
+                started_at=started_at,
+                completed_at=completed_at,
+                status=status,
+                usage_metadata=usage_metadata,
+                exc=exc,
+                http_status_code=http_status_code,
+            )
+        )
+    except Exception:
+        pass  # Analytics must never break AI responses

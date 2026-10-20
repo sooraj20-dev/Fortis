@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import api, { getCached } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
+import AIUsageIndicator from '../../components/AIUsageIndicator';
 
 const COACH_IMG = '/landing_imgs/coach.png';
 
@@ -366,6 +367,10 @@ export const CoachPage: React.FC = () => {
               )}
             </div>
           </div>
+        </div>
+
+        <div className="absolute top-3 right-12 min-[400px]:right-[112px] z-20 flex items-center bg-black/50 backdrop-blur border border-white/15 rounded-xl px-2 min-h-[40px] pointer-events-auto">
+          <AIUsageIndicator feature="ai_coach" />
         </div>
 
         <button

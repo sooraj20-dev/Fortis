@@ -35,7 +35,8 @@ class AIProvider(ABC):
         self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict]] = None,
-        max_tokens: int = 1024
+        max_tokens: int = 1024,
+        user_id: Optional[int] = None,
     ) -> AIResponse:
         pass
 

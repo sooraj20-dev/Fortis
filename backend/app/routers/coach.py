@@ -207,7 +207,7 @@ async def send_message(
     # Get AI response
     try:
         provider = get_ai_provider()
-        response = await provider.complete(messages, max_tokens=1024)
+        response = await provider.complete(messages, max_tokens=1024, user_id=current_user.id)
     except AIProviderError:
         response = AIResponse(content="Coach unavailable, using fallback.", finish_reason="error")
 

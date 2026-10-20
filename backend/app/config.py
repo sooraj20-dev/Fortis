@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     AUTH_RATE_LIMIT_REGISTER_PER_MINUTE: int = 10
     AUTH_MAX_FAILED_LOGIN_ATTEMPTS: int = 5
     AUTH_LOCKOUT_MINUTES: int = 15
+    AI_USAGE_WARNING_PERCENT: float = 80.0
+    AI_DAILY_REQUEST_BUDGET: int = 0
+    AI_REQUESTS_PER_MINUTE_BUDGET: int = 0
+    AI_TOKENS_PER_MINUTE_BUDGET: int = 0
 
     class Config:
         env_file = Path(__file__).resolve().parents[1] / ".env"

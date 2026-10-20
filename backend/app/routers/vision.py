@@ -91,7 +91,7 @@ def _analyze_exercise_video(filepath: str, exercise_type: str) -> dict:
     }
 
 
-async def _analyze_exercise_with_gemini(filepath: str, exercise_type: str, kinematics: dict) -> dict:
+async def _analyze_exercise_with_gemini(filepath: str, exercise_type: str, kinematics: dict, user_id: Optional[int] = None) -> dict:
     """Assess sampled video frames with Gemini Flash and pose measurements when available."""
     import cv2
 
@@ -134,6 +134,8 @@ set form_score to null, confidence below 0.4, and explain what needs to be refra
         max_tokens=1500,
         max_output_token_cap=2048,
         thinking_level="low",
+        feature="fortis_vision",
+        user_id=user_id,
     )
 
 
@@ -163,7 +165,7 @@ class FoodAnalysisSchema(BaseModel):
     brief_note: str = ""
 
 
-async def _analyze_food_with_gemini(image_bytes: bytes, mime_type: str) -> dict:
+async def _analyze_food_with_gemini(image_bytes: bytes, mime_type: str, user_id: Optional[int] = None) -> dict:
     prompt = """Identify the visible food and estimate nutrition for the entire visible serving. Specialize in Indian and Kerala cuisine.
 Return a validated JSON object with: food_name, region, confidence (0-1), serving_description, serving_g (integer),
 calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, alternatives (array of name/confidence), is_healthy (boolean), brief_note.
@@ -177,6 +179,8 @@ use food_name 'Unidentified Food Item' and confidence below 0.5. Do not invent i
         max_tokens=1500,
         max_output_token_cap=2048,
         thinking_level="low",
+        feature="fortis_vision",
+        user_id=user_id,
     )
 
 
@@ -214,7 +218,12 @@ async def analyze_exercise_form(
         if exercise_name.lower() not in {"squat", "squats"}:
             # The current deterministic angle scoring is squat-specific.
             kinematics = {"landmark_frames": 0}
-        analysis = await _analyze_exercise_with_gemini(filepath, exercise_name, kinematics)
+        import inspect
+        sig = inspect.signature(_analyze_exercise_with_gemini)
+        if "user_id" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            analysis = await _analyze_exercise_with_gemini(filepath, exercise_name, kinematics, user_id=current_user.id)
+        else:
+            analysis = await _analyze_exercise_with_gemini(filepath, exercise_name, kinematics)
     except AIProviderError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     except ValueError as e:
@@ -288,7 +297,12 @@ async def analyze_food_image(
     # ── Gemini Flash Vision Analysis ──────────────────────────────────────
     try:
         mime = "image/jpeg" if file.content_type == "image/jpg" else (file.content_type or "image/jpeg")
-        parsed = await _analyze_food_with_gemini(content, mime)
+        import inspect
+        sig = inspect.signature(_analyze_food_with_gemini)
+        if "user_id" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            parsed = await _analyze_food_with_gemini(content, mime, user_id=current_user.id)
+        else:
+            parsed = await _analyze_food_with_gemini(content, mime)
     except AIProviderError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:

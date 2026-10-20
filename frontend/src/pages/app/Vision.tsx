@@ -4,6 +4,7 @@ import {
   Utensils, Activity, Clipboard, Minus, Plus, Video, RotateCcw, Target,
 } from 'lucide-react';
 import api from '../../services/api';
+import AIUsageIndicator from '../../components/AIUsageIndicator';
 
 type Tab = 'food' | 'form';
 
@@ -213,9 +214,14 @@ export const VisionPage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl sm:text-4xl font-black text-white">Fortis Vision</h1>
-        <p className="text-sm text-text-secondary mt-1">Point, snap or drop. Identify a meal and its nutrition, or check your lifting form.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-black text-white">Fortis Vision</h1>
+          <p className="text-sm text-text-secondary mt-1">Point, snap or drop. Identify a meal and its nutrition, or check your lifting form.</p>
+        </div>
+        <div className="pt-1">
+          <AIUsageIndicator feature="fortis_vision" />
+        </div>
       </div>
 
       {/* Sliding segmented switch */}
