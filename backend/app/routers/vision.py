@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
+from typing import List, Optional
 import os
 import uuid
 import json
@@ -140,7 +141,6 @@ set form_score to null, confidence below 0.4, and explain what needs to be refra
 
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
 
 
 class FoodAlternative(BaseModel):
