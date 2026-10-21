@@ -9,6 +9,7 @@ import { getCached } from './services/api';
 const Landing        = lazy(() => import('./pages/Landing'));
 const AuthPage       = lazy(() => import('./pages/auth/AuthPage'));
 const Onboarding     = lazy(() => import('./pages/Onboarding'));
+const PlanCreating   = lazy(() => import('./pages/PlanCreating'));
 const Dashboard      = lazy(() => import('./pages/app/Dashboard'));
 const WorkoutPage    = lazy(() => import('./pages/app/Workout'));
 const NutritionPage  = lazy(() => import('./pages/app/Nutrition'));
@@ -100,6 +101,14 @@ function App() {
             element={
               <RequireAuth>
                 <Onboarding />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/plan-creating"
+            element={
+              <RequireAuth>
+                <PlanCreating />
               </RequireAuth>
             }
           />

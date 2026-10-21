@@ -156,11 +156,6 @@ export const Dashboard: React.FC = () => {
     sessionStorage.removeItem('fortis_new_registration');
   };
 
-  const handleOnboardingComplete = () => {
-    closeOnboarding();
-    fetchDashboardData(true);
-  };
-
   if (loading && !data) {
     return <SplashScreen isLoader message="Synthesizing your Personal Fitness State…" />;
   }
@@ -210,7 +205,7 @@ export const Dashboard: React.FC = () => {
           aria-label="Fitness onboarding"
         >
           <div className="relative w-full h-[100dvh] sm:h-auto sm:max-w-3xl sm:max-h-[92vh] bg-dark-bg sm:border sm:border-dark-border sm:rounded-3xl sm:shadow-2xl overflow-y-auto overscroll-contain hide-scrollbar">
-            <Onboarding isModal onComplete={handleOnboardingComplete} onClose={closeOnboarding} />
+            <Onboarding isModal onClose={closeOnboarding} />
           </div>
         </div>
       )}

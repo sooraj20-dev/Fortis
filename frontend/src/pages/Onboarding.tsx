@@ -13,15 +13,15 @@ import {
   ShieldCheck,
   CheckCircle2,
   Sparkles,
+  Crosshair,
   X,
 } from 'lucide-react';
-import { completeOnboarding } from '../services/profileApi';
 import { useAuthStore } from '../stores/authStore';
 import BrandLogo from '../components/BrandLogo';
+import BodyMap, { FOCUS_GROUPS, type FocusId } from '../components/BodyMap';
 import type { OnboardingData } from '../types';
 
 export interface OnboardingProps {
-  onComplete?: () => void;
   isModal?: boolean;
   onClose?: () => void;
 }
@@ -34,7 +34,8 @@ const STEPS = [
   { id: 3, title: 'Nutrition', icon: Utensils, tip: "Food is fuel. Tell me what's on your plate and your budget." },
   { id: 4, title: 'Lifestyle', icon: Moon, tip: 'Sleep is the cheapest supplement there is.' },
   { id: 5, title: 'Safety', icon: ShieldCheck, tip: "Tell me what hurts. I'd rather work around it than through it." },
-  { id: 6, title: 'Review', icon: Sparkles, tip: 'Last look. Then we get to work.' },
+  { id: 6, title: 'Focus', icon: Crosshair, tip: 'Pick where you want extra emphasis. Everything else still gets trained.' },
+  { id: 7, title: 'Review', icon: Sparkles, tip: 'Last look. Then we get to work.' },
 ];
 const TOTAL_STEPS = STEPS.length;
 
@@ -246,9 +247,8 @@ const CoachTip: React.FC<{ tip: string; className?: string }> = ({ tip, classNam
 
 /* ───────────────────────── Page ───────────────────────── */
 
-export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onClose }) => {
+export const Onboarding: React.FC<OnboardingProps> = ({ isModal, onClose }) => {
   const navigate = useNavigate();
-  const setOnboardingComplete = useAuthStore((s) => s.setOnboardingComplete);
   const onboardingComplete = useAuthStore((s) => s.onboardingComplete);
   const userName = useAuthStore((s) => s.user?.name || 'Athlete');
 
@@ -302,6 +302,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
     exercises_to_avoid: [],
     preferred_exercise_types: ['Full Body', 'Cardio'],
     strength_benchmarks: {},
+
+    // Step 6: Focus (empty array = Balanced)
+    focus_areas: [] as string[],
   });
 
   const set = (patch: Partial<OnboardingData>) => setFormData((prev) => ({ ...prev, ...patch }));
@@ -375,38 +378,15 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
         return false;
       }
     }
+    // Step 6 (Focus): an empty selection is valid and means "Balanced".
     return true;
   };
 
   // Submission
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     setError(null);
     setSubmitting(true);
-    try {
-      const response = await completeOnboarding(formData);
-      if (response.success || response.onboarding_complete) {
-        sessionStorage.removeItem('fortis_new_registration');
-        setOnboardingComplete(true);
-        if (onComplete) {
-          onComplete();
-        } else {
-          navigate('/dashboard', { replace: true });
-        }
-      } else {
-        setError(response.message || 'Failed to complete onboarding. Please try again.');
-      }
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      if (typeof detail === 'string') {
-        setError(detail);
-      } else if (Array.isArray(detail)) {
-        setError(detail.map((d: any) => d.msg || 'Validation error').join(', '));
-      } else {
-        setError('Unable to save onboarding profile. Please check your connection and retry.');
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    navigate('/plan-creating', { state: { onboardingData: formData } });
   };
 
   // Helper toggle for array fields
@@ -419,6 +399,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
       setFormData({ ...formData, [field]: [...list, item] });
     }
   };
+
+  // Focus: toggling a group leaves "Balanced"; picking all groups is the same as Balanced
+  const toggleFocus = (id: FocusId) => {
+    const cur = (formData.focus_areas || []) as FocusId[];
+    const next = cur.includes(id) ? cur.filter((i) => i !== id) : [...cur, id];
+    set({ focus_areas: next.length === FOCUS_GROUPS.length ? [] : next });
+  };
+
+  const focusLabel = formData.focus_areas?.length
+    ? FOCUS_GROUPS.filter((g) => formData.focus_areas!.includes(g.id)).map((g) => g.label).join(', ')
+    : 'Balanced';
 
   const step = STEPS[currentStep - 1];
   const showSidebar = !isModal;
@@ -1062,8 +1053,47 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
                   </div>
                 )}
 
-                {/* ───── STEP 6: REVIEW ───── */}
+                {/* ───── STEP 6: FOCUS ───── */}
                 {currentStep === 6 && (
+                  <div className="space-y-6">
+                    <SectionTitle icon={Crosshair} iconClass="text-brand-light" title="Focus">
+                      Tap one or more groups on the silhouette to give them more emphasis. Your whole body will still be trained.
+                    </SectionTitle>
+
+                    <div>
+                      <h3 className="text-center text-base font-bold text-white mb-3">Muscles to prioritize?</h3>
+                      <BodyMap value={(formData.focus_areas || []) as FocusId[]} onToggle={toggleFocus} />
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="group" aria-label="Muscle groups to prioritize">
+                      <Choice
+                        center
+                        label="Balanced"
+                        desc="Recommended"
+                        selected={!formData.focus_areas?.length}
+                        onClick={() => set({ focus_areas: [] })}
+                      />
+                      {FOCUS_GROUPS.map((g) => (
+                        <Choice
+                          key={g.id}
+                          center
+                          label={g.label}
+                          selected={!!formData.focus_areas?.includes(g.id)}
+                          onClick={() => toggleFocus(g.id)}
+                        />
+                      ))}
+                    </div>
+
+                    {!formData.focus_areas?.length && (
+                      <p className="text-center text-[11px] text-text-muted -mt-2">
+                        All groups together make a balanced program.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* ───── STEP 7: REVIEW ───── */}
+                {currentStep === 7 && (
                   <div className="space-y-6">
                     <SectionTitle icon={Sparkles} iconClass="text-brand" title="Review & generate plans">
                       Confirm your details. Fortis will generate your personalised starter workout plan and nutrition blueprint.
@@ -1129,6 +1159,13 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isModal, onC
                           ['Preferred styles', formData.preferred_exercise_types?.join(', ') || 'No preference'],
                           ['Benchmarks', benchmarksText],
                         ]}
+                      />
+                      <ReviewCard
+                        wide
+                        title="Training focus"
+                        titleClass="text-brand-light"
+                        onEdit={() => goToStep(6)}
+                        rows={[['Priority', focusLabel]]}
                       />
                     </div>
 

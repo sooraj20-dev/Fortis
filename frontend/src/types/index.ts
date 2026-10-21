@@ -96,6 +96,7 @@ export interface OnboardingData {
   exercises_to_avoid?: string[];
   preferred_exercise_types?: string[];
   strength_benchmarks?: Record<string, any>;
+  focus_areas?: string[];
 }
 
 export interface ProfileUpdateRequest {
