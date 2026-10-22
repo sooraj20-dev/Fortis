@@ -41,12 +41,12 @@ const quotes = [
 ];
 
 // Placeholder quotes: replace with each person's real words before launch.
-// Put each profile photo in /public/landing_imgs/ and match the file name in `avatar`.
+// Put each profile photo in /public/testimonials/ and match the file name in `avatar`.
 const testimonials = [
   {
     name: 'Aswin Krishna',
     role: 'Gym Trainer',
-    avatar: '/landing_imgs/aswin.png',
+    avatar: '/testimonials/aswin.png',
     quote:
       "I coach people for a living and still ignored my own recovery. Fortis flagged my fatigue before a heavy block, and now I check the Pulse score before I program my clients too.",
     from: 54,
@@ -57,7 +57,7 @@ const testimonials = [
   {
     name: 'Ahmmed Niyas',
     role: 'Game Developer',
-    avatar: '/landing_imgs/ahmmed.png',
+    avatar: '/testimonials/ahmmed.png',
     quote:
       "Crunch weeks used to wreck my sleep and my lifts. Fortis scales the session to how drained I am after a long build, so I stay consistent without it becoming another deadline.",
     from: 48,
@@ -68,7 +68,7 @@ const testimonials = [
   {
     name: 'Ajith',
     role: 'Director',
-    avatar: '/landing_imgs/ajith.png',
+    avatar: '/testimonials/ajith.png',
     quote:
       "On set days I get maybe five hours of sleep. The plan drops to short mobility work then, and pushes hard when I'm rested. It's the first app that fits a schedule like mine.",
     from: 61,
