@@ -13,7 +13,6 @@ import {
   ChevronRight,
   Flame,
   Star,
-  BadgeCheck,
 } from 'lucide-react';
 
 /* ───────────────────────── Content ───────────────────────── */
@@ -21,7 +20,6 @@ import {
 const IMG = {
   hero: '/landing_imgs/hero.png',
   pose: '/landing_imgs/hero_pose.png',
-  coach: '/landing_imgs/coach.png',
   footer: '/landing_imgs/footer.png',
 };
 
@@ -42,36 +40,40 @@ const quotes = [
   { text: 'Show up tired. Leave proud. That is the whole secret.', tag: 'On showing up' },
 ];
 
-// Placeholder testimonials: replace with real member stories before launch.
+// Placeholder quotes: replace with each person's real words before launch.
+// Put each profile photo in /public/landing_imgs/ and match the file name in `avatar`.
 const testimonials = [
   {
-    name: 'Arjun Menon',
-    role: 'Software engineer · 14 weeks',
+    name: 'Aswin Krishna',
+    role: 'Gym Trainer',
+    avatar: '/landing_imgs/aswin.png',
     quote:
-      "I used to train through everything. Fortis told me to take a recovery day when my Pulse hit 52. Two weeks later I hit a deadlift PR I'd been stuck on for months.",
+      "I coach people for a living and still ignored my own recovery. Fortis flagged my fatigue before a heavy block, and now I check the Pulse score before I program my clients too.",
     from: 54,
     to: 81,
     chips: ['Deadlift +20 kg', 'Sleep 6.1 → 7.4 h'],
     hue: 'from-brand to-amber-400',
   },
   {
-    name: 'Priya Nair',
-    role: 'Marathon runner · 9 weeks',
+    name: 'Ahmmed Niyas',
+    role: 'Game Developer',
+    avatar: '/landing_imgs/ahmmed.png',
     quote:
-      "The Body Scan caught a hip mobility issue before it became an injury. It's the first app that compared me to me, not to some average.",
-    from: 61,
-    to: 84,
-    chips: ['0 missed sessions', 'Hip mobility +18%'],
+      "Crunch weeks used to wreck my sleep and my lifts. Fortis scales the session to how drained I am after a long build, so I stay consistent without it becoming another deadline.",
+    from: 48,
+    to: 73,
+    chips: ['4/4 weeks on plan', 'Fatigue risk: low'],
     hue: 'from-sky-400 to-brand',
   },
   {
-    name: 'Rahul Varma',
-    role: 'Weekend lifter · 6 weeks',
+    name: 'Ajith',
+    role: 'Director',
+    avatar: '/landing_imgs/ajith.png',
     quote:
-      'I only have 4 sessions a week. The plan adapts to how I actually feel, so I stopped burning out by Thursday. The AI coach answers like it knows my numbers, because it does.',
-    from: 48,
-    to: 73,
-    chips: ['Fatigue risk: low', '4/4 weeks on plan'],
+      "On set days I get maybe five hours of sleep. The plan drops to short mobility work then, and pushes hard when I'm rested. It's the first app that fits a schedule like mine.",
+    from: 61,
+    to: 84,
+    chips: ['0 missed sessions', 'Posture score +18%'],
     hue: 'from-amber-400 to-rose-500',
   },
 ];
@@ -105,16 +107,86 @@ const SpotlightCard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   );
 };
 
-const Avatar: React.FC<{ name: string; hue: string }> = ({ name, hue }) => (
-  <div className={`w-11 h-11 rounded-full bg-gradient-to-br ${hue} p-[2px] shrink-0`} aria-hidden>
-    <div className="w-full h-full rounded-full bg-dark-bg flex items-center justify-center text-sm font-black text-white">
-      {name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')}
+const Avatar: React.FC<{ name: string; hue: string; src?: string }> = ({ name, hue, src }) => {
+  const [failed, setFailed] = useState(false);
+  const initials = name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2);
+  return (
+    <div
+      className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br ${hue} p-[3px] shadow-xl shadow-brand/20`}
+    >
+      {src && !failed ? (
+        <img
+          src={src}
+          alt={name}
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className="w-full h-full rounded-full object-cover object-top bg-dark-bg border-2 border-dark-bg"
+        />
+      ) : (
+        <div
+          className="w-full h-full rounded-full bg-dark-bg flex items-center justify-center text-xl font-black text-white"
+          aria-hidden
+        >
+          {initials}
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
+
+const TestimonialCard: React.FC<{ t: (typeof testimonials)[number]; featured?: boolean }> = ({ t, featured }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const onMove = (e: React.PointerEvent) => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    el.style.setProperty('--my', `${e.clientY - r.top}px`);
+  };
+  return (
+    <div className="relative pt-10 sm:pt-12">
+      {/* avatar overlaps the top edge of the card */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 z-10">
+        <Avatar name={t.name} hue={t.hue} src={t.avatar} />
+      </div>
+      <div
+        ref={ref}
+        onPointerMove={onMove}
+        className={`fortis-card group relative h-full text-center px-5 sm:px-6 pt-14 sm:pt-16 pb-6 transition-all duration-300 hover:border-brand/40 ${
+          featured ? 'lg:-translate-y-3 border-brand/40 shadow-2xl shadow-brand/10' : ''
+        }`}
+      >
+        <div className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            style={{
+              background:
+                'radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), rgba(255,90,31,0.18), transparent 70%)',
+            }}
+          />
+        </div>
+        <div className="relative flex flex-col h-full">
+          <h3 className="font-bold text-white text-base">{t.name}</h3>
+          <p className="text-[11px] text-brand-light font-semibold mt-0.5">{t.role}</p>
+          <p className="text-sm text-text-secondary leading-relaxed mt-4 mb-5 flex-1">“{t.quote}”</p>
+          <div className="text-[11px] text-text-muted mb-3">
+            Pulse score <span className="text-white font-bold tabular-nums">{t.from}</span>{' '}
+            <span>→</span> <span className="text-brand-light font-bold tabular-nums">{t.to}</span>
+          </div>
+          <div className="flex justify-center gap-1" aria-label="5 out of 5 stars">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star key={i} className="w-4 h-4 fill-brand-light text-brand-light" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const PulseRing: React.FC<{ value: number }> = ({ value }) => {
   const r = 70;
@@ -257,15 +329,11 @@ const Landing: React.FC = () => {
         @keyframes fortis-ember { 0% { transform: translateY(0) scale(1); opacity: 0; } 15% { opacity: .9; } 100% { transform: translateY(-460px) scale(.3); opacity: 0; } }
         @keyframes fortis-quote { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
         @keyframes fortis-breathe { 0%,100% { opacity: .55; } 50% { opacity: .85; } }
-        @keyframes fortis-pop { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
-        @keyframes fortis-bar { from { width: 0; } }
         .hero-rise { opacity: 0; animation: fortis-rise .8s cubic-bezier(.2,.7,.2,1) forwards; }
         .chip-float { animation: fortis-float 5s ease-in-out infinite; }
         .ember { position: absolute; bottom: -10px; border-radius: 9999px; background: #ff5a1f; filter: blur(1px); animation: fortis-ember linear infinite; }
         .quote-swap { animation: fortis-quote .5s ease both; }
         .hero-glow { animation: fortis-breathe 6s ease-in-out infinite; }
-        .bubble-pop { opacity: 0; animation: fortis-pop .6s cubic-bezier(.2,.7,.2,1) forwards; }
-        .pulse-bar { animation: fortis-bar 1.2s cubic-bezier(.2,.7,.2,1) both; }
 
         /* Hero background layer: moves with pointer + scroll. Scaled up so edges never show. */
         .hero-bg-img {
@@ -288,7 +356,7 @@ const Landing: React.FC = () => {
           }
         }
         @media (prefers-reduced-motion: reduce) {
-          .hero-rise, .chip-float, .ember, .quote-swap, .hero-glow, .bubble-pop, .pulse-bar { animation: none !important; opacity: 1 !important; }
+          .hero-rise, .chip-float, .ember, .quote-swap, .hero-glow { animation: none !important; opacity: 1 !important; }
           .hero-bg-img, .hero-chip, .hero-word { transform: scale(1.04) !important; transition: none !important; }
         }
       `}</style>
@@ -573,113 +641,16 @@ const Landing: React.FC = () => {
       </section>
 
       {/* ── Testimonials ─────────────────────────────────── */}
-      <section className="px-4 sm:px-6 pb-14 sm:pb-24 max-w-6xl mx-auto w-full">
-        <p className="overline text-center mb-3">Real Results</p>
-        <h2 className="text-2xl sm:text-3xl font-extrabold text-white text-center mb-2 tracking-tight">
-          Trained by data. <span className="text-gradient">Trusted by lifters.</span>
+      <section className="px-4 sm:px-6 pb-16 sm:pb-24 max-w-6xl mx-auto w-full">
+        <p className="overline text-center mb-3">Testimonials</p>
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-white text-center mb-10 sm:mb-14 tracking-tight max-w-md mx-auto">
+          People who train on <span className="text-gradient">the right day</span>
         </h2>
-        <p className="text-center text-text-secondary text-sm max-w-md mx-auto mb-10 sm:mb-14">
-          Members don't just train harder. They train on the right day.
-        </p>
 
-        <div className="grid lg:grid-cols-[minmax(0,360px)_1fr] gap-8 lg:gap-12 items-start">
-          {/* Coach photo + live chat bubble */}
-          <div className="relative mx-auto w-full max-w-[300px] sm:max-w-[360px] lg:sticky lg:top-24">
-            <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-brand/40 via-transparent to-amber-400/20 blur-2xl" />
-            <div className="relative rounded-[1.5rem] sm:rounded-[1.75rem] overflow-hidden border border-brand/30 shadow-2xl group">
-              <img
-                src={IMG.coach}
-                alt="Coach Fortis"
-                loading="lazy"
-                className="w-full aspect-[4/5] object-cover object-top transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-dark-bg via-dark-bg/20 to-transparent" />
-
-              {/* chat bubble */}
-              <div className="absolute left-3 right-3 bottom-3 sm:left-4 sm:right-4 sm:bottom-4 space-y-2">
-                <div
-                  className="bubble-pop fortis-card backdrop-blur px-3.5 py-2.5 rounded-2xl rounded-bl-sm"
-                  style={{ animationDelay: '.3s' }}
-                >
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Flame className="w-3.5 h-3.5 text-brand-light" />
-                    <span className="text-[10px] font-bold text-brand-light uppercase tracking-wider">
-                      Coach Fortis · 6:42 AM
-                    </span>
-                  </div>
-                  <p className="text-xs text-white leading-snug">
-                    Pulse is 58 today. Swap heavy squats for a tempo session. You'll thank me Friday.
-                  </p>
-                </div>
-                <div className="bubble-pop flex justify-end" style={{ animationDelay: '1.1s' }}>
-                  <div className="bg-brand text-white text-xs font-semibold px-3.5 py-2 rounded-2xl rounded-br-sm shadow-lg">
-                    Fair call. On it. 💪
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Testimonial cards */}
-          <div className="space-y-4 sm:space-y-5 min-w-0">
-            {testimonials.map((t) => (
-              <SpotlightCard key={t.name}>
-                <div className="min-w-0 w-full">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Avatar name={t.name} hue={t.hue} />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-white text-sm truncate">{t.name}</span>
-                          <BadgeCheck className="w-4 h-4 text-brand-light shrink-0" aria-label="Verified member" />
-                        </div>
-                        <div className="text-[11px] text-text-muted truncate">{t.role}</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-0.5 shrink-0" aria-label="5 out of 5 stars">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star key={i} className="w-3.5 h-3.5 fill-brand-light text-brand-light" />
-                      ))}
-                    </div>
-                  </div>
-
-                  <p className="text-sm text-text-secondary leading-relaxed mb-4">“{t.quote}”</p>
-
-                  {/* before → after pulse */}
-                  <div className="mb-3">
-                    <div className="flex justify-between text-[11px] mb-1.5">
-                      <span className="text-text-muted">Pulse score</span>
-                      <span className="text-white font-bold tabular-nums">
-                        {t.from} <span className="text-text-muted font-normal">→</span>{' '}
-                        <span className="text-brand-light">{t.to}</span>
-                      </span>
-                    </div>
-                    <div className="relative h-1.5 rounded-full bg-white/10 overflow-hidden">
-                      <div
-                        className="absolute inset-y-0 left-0 rounded-full bg-white/25"
-                        style={{ width: `${t.from}%` }}
-                      />
-                      <div
-                        className="pulse-bar absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-brand to-amber-400"
-                        style={{ width: `${t.to}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {t.chips.map((c) => (
-                      <span
-                        key={c}
-                        className="text-[10px] font-semibold text-brand-light bg-brand/10 border border-brand/20 rounded-full px-2.5 py-1"
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </SpotlightCard>
-            ))}
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-5 gap-y-8 lg:gap-x-6 items-stretch">
+          {testimonials.map((t, i) => (
+            <TestimonialCard key={t.name} t={t} featured={i === 1} />
+          ))}
         </div>
       </section>
 
