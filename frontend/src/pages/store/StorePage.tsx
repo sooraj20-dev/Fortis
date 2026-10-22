@@ -50,7 +50,7 @@ function useLockBody(locked: boolean) {
 }
 
 const stockInfo = (n: number) =>
-  n <= 0 ? { label: 'Sold out', dot: 'bg-red-400', text: 'text-red-300' }
+  n <= 0 ? { label: 'Unavailable', dot: 'bg-red-400', text: 'text-red-300' }
     : n <= 5 ? { label: `Only ${n} left`, dot: 'bg-amber-400', text: 'text-amber-300' }
       : { label: 'In stock', dot: 'bg-emerald-400', text: 'text-emerald-300' };
 
@@ -68,8 +68,8 @@ function ProductSkeletons({ n = 8 }: { n?: number }) {
   </div>;
 }
 
-function ProductCard({ product, categories, onAdd, onQuick, saved, onSave, busy, className = '' }: {
-  product: StoreProduct; categories: StoreCategory[]; onAdd: (p: StoreProduct) => void; onQuick: (p: StoreProduct) => void;
+function ProductCard({ product, categories, onAdd, onBuy, onQuick, saved, onSave, busy, className = '' }: {
+  product: StoreProduct; categories: StoreCategory[]; onAdd: (p: StoreProduct) => Promise<boolean>; onBuy: (p: StoreProduct) => void; onQuick: (p: StoreProduct) => void;
   saved: boolean; onSave: (p: StoreProduct) => void; busy: boolean; className?: string;
 }) {
   const stock = stockInfo(product.stock_quantity);
@@ -82,8 +82,7 @@ function ProductCard({ product, categories, onAdd, onQuick, saved, onSave, busy,
       </Link>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-2.5">
         <div className="flex flex-col items-start gap-1.5">
-          {product.demo_only && <span className="rounded-full bg-amber-950/90 px-2.5 py-1 text-[10px] font-semibold text-amber-200">Demo item</span>}
-          {product.featured && !product.demo_only && <span className="rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">Featured</span>}
+          {product.featured && <span className="rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">Featured</span>}
           {product.stock_quantity > 0 && product.stock_quantity <= 5 && <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[10px] font-bold text-black">{stock.label}</span>}
         </div>
         <button onClick={() => onSave(product)} aria-pressed={saved} aria-label={saved ? `Remove ${product.name} from saved` : `Save ${product.name}`}
@@ -100,13 +99,15 @@ function ProductCard({ product, categories, onAdd, onQuick, saved, onSave, busy,
       <div className="truncate text-[11px] text-text-muted">{categoryLabel(categories, product.category_id)}</div>
       <Link to={`/store/product/${product.slug}`} className="mt-0.5 block truncate text-[15px] font-semibold text-text-primary hover:text-brand-light">{product.name}</Link>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="font-bold text-white">{product.demo_only ? 'Sample listing' : inr(product.price_paise)}</span>
+        <span className="font-bold text-white">{inr(product.price_paise)}</span>
         {product.variants?.length ? <Link to={`/store/product/${product.slug}`} className="flex h-9 items-center justify-center rounded-lg bg-white/[.07] px-3 text-xs font-semibold hover:bg-brand">Options</Link>
-          : <button onClick={() => onAdd(product)} disabled={!product.stock_quantity || product.demo_only || busy}
-            className="flex h-9 min-w-[64px] items-center justify-center gap-1 rounded-lg bg-white/[.07] px-3 text-xs font-semibold text-white transition hover:bg-brand active:scale-95 disabled:opacity-40 disabled:hover:bg-white/[.07]"
-            aria-label={`Add ${product.name} to bag`}>
-            {product.demo_only ? 'Preview' : product.stock_quantity ? (busy ? '…' : <><Plus size={13} /> Add</>) : 'Sold out'}
-          </button>}
+          : <div className="flex gap-1.5">
+            <button onClick={() => onAdd(product)} disabled={!product.stock_quantity || product.demo_only || busy}
+              className="flex h-9 items-center justify-center gap-1 rounded-lg bg-white/[.07] px-2.5 text-xs font-semibold text-white transition hover:bg-white/15 active:scale-95 disabled:opacity-40"
+              aria-label={`Add ${product.name} to bag`}><Plus size={13} /> Add</button>
+            <button onClick={() => onBuy(product)} disabled={!product.stock_quantity || product.demo_only || busy}
+              className="flex h-9 items-center justify-center rounded-lg bg-brand px-2.5 text-xs font-semibold text-white transition hover:bg-brand-light active:scale-95 disabled:opacity-40">Buy now</button>
+          </div>}
       </div>
     </div>
   </article>;
@@ -192,11 +193,11 @@ function QuickView({ product, categories, onClose, onAdd, busy }: { product: Sto
       <div className="flex flex-col p-5 sm:p-7">
         <p className="text-xs text-text-muted">{categoryLabel(categories, product.category_id)}{product.brand ? ` Â· ${product.brand}` : ''}</p>
         <h3 className="mt-1 text-xl font-bold">{product.name}</h3>
-        <p className="mt-3 text-2xl font-bold">{product.demo_only ? 'Demonstration listing' : inr(product.price_paise)}</p>
-        <div className="mt-2 flex items-center gap-2 text-xs">{product.demo_only ? <span className="text-amber-200">Preview only Â· not for sale</span> : <><span className={`h-2 w-2 rounded-full ${stock.dot}`} /><span className={stock.text}>{stock.label}</span></>}</div>
+        <p className="mt-3 text-2xl font-bold">{inr(product.price_paise)}</p>
+        {product.stock_quantity > 0 && <div className="mt-2 flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${stock.dot}`} /><span className={stock.text}>{stock.label}</span></div>}
         <p className="mt-4 line-clamp-4 text-sm leading-6 text-text-secondary">{product.description || 'Product details will be available soon.'}</p>
         <div className="mt-6 flex gap-2 sm:mt-auto">
-          {product.variants?.length ? <Link to={`/store/product/${product.slug}`} onClick={onClose} className="fortis-btn-primary flex-1 text-center">Choose options</Link> : <button disabled={!product.stock_quantity || product.demo_only || busy} onClick={() => { onAdd(product); onClose(); }} className="fortis-btn-primary flex-1">{product.demo_only ? 'Preview only' : 'Add to bag'}</button>}
+          {product.variants?.length ? <Link to={`/store/product/${product.slug}`} onClick={onClose} className="fortis-btn-primary flex-1 text-center">Choose options</Link> : <button disabled={!product.stock_quantity || product.demo_only || busy} onClick={() => { onAdd(product); onClose(); }} className="fortis-btn-primary flex-1">Add to bag</button>}
           <Link to={`/store/product/${product.slug}`} onClick={onClose} className="fortis-btn-secondary">Details</Link>
         </div>
       </div>
@@ -341,7 +342,7 @@ export default function StorePage() {
   const heroImage = 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=1500&q=85';
   const landing = isCatalog && !q && !category && page === 1 && !showSaved && !available;
   const list = showSaved ? saved : catalog.items;
-  const card = (p: StoreProduct, className = '') => <ProductCard key={p.id} className={className} product={p} categories={categories} onAdd={x => addToCart(x)} onQuick={setQuick} saved={isSaved(p)} onSave={toggleSaved} busy={busyId === p.id} />;
+  const card = (p: StoreProduct, className = '') => <ProductCard key={p.id} className={className} product={p} categories={categories} onAdd={x => addToCart(x)} onBuy={async x => { if (await addToCart(x, 1, false)) goCheckout(); }} onQuick={setQuick} saved={isSaved(p)} onSave={toggleSaved} busy={busyId === p.id} />;
   const featured = catalog.items.filter(p => p.featured);
   const activeFilters = [
     q && { k: 'q', label: `â€œ${q}â€` }, category && { k: 'category', label: categoryLabel(categories, category) },
@@ -355,7 +356,7 @@ export default function StorePage() {
     {/* header */}
     <header className="sticky top-0 z-30 -mx-4 mb-5 flex items-center justify-between gap-3 border-b border-white/[.07] bg-[#0a0a0d]/85 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6">
       <Link to="/store" className="flex items-center gap-2.5">
-        <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand text-white"><ShoppingBag size={19} /></span>
+        <img src="/fortis-mark.png" alt="FORTIS" className="h-10 w-10 object-contain" />
         <span className="leading-tight"><b className="block text-sm tracking-[.14em]">FORTIS <span className="text-brand-light">STORE</span></b><small className="hidden text-[10px] text-text-muted sm:block">Train better. Choose smarter.</small></span>
       </Link>
       <nav className="flex items-center gap-1 sm:gap-2" aria-label="Store">
@@ -561,9 +562,9 @@ function ProductDetail({ product, categories, related, recent, busy, saved, onSa
         <h1 className="mt-1.5 text-3xl font-black leading-tight sm:text-4xl">{product.name}</h1>
         {(product.brand || product.sku) && <p className="mt-2 text-sm text-text-muted">{product.brand}{product.brand && product.sku ? ' Â· ' : ''}{product.sku && `SKU ${product.sku}`}</p>}
         {product.variants?.length ? <label className="mt-5 block text-xs font-semibold text-white/60">Choose an option<select value={variantId} onChange={e => {setVariantId(e.target.value);setQty(1)}} className="fortis-input mt-1"><option value="">Select option</option>{product.variants.map(v=><option key={v.id} value={v.id}>{v.name} · {v.stock_quantity} available</option>)}</select></label> : null}
-        <p className="mt-5 text-3xl font-bold">{product.demo_only ? 'Demonstration listing' : inr(currentPrice)}</p>
-        {product.demo_only ? <p className="mt-1 text-xs text-amber-200">Sample gear preview only. No verified price or inventory; not for sale.</p> : <p className="mt-1 text-[11px] text-text-muted">Shipping and taxes are not configured yet.</p>}
-        <div className="mt-3 flex items-center gap-2 text-sm"><span className={`h-2 w-2 rounded-full ${stock.dot}`} /><span className={stock.text}>{stock.label}</span>{selectedVariant && <span className="text-xs text-white/45">· {Object.entries(selectedVariant.attributes || {}).map(([k,v])=>`${k}: ${v}`).join(' · ')}</span>}</div>
+        <p className="mt-5 text-3xl font-bold">{inr(currentPrice)}</p>
+        <p className="mt-1 text-[11px] text-text-muted">Shipping and taxes are not configured yet.</p>
+        {currentStock > 0 && <div className="mt-3 flex items-center gap-2 text-sm"><span className={`h-2 w-2 rounded-full ${stock.dot}`} /><span className={stock.text}>{stock.label}</span>{selectedVariant && <span className="text-xs text-white/45">{Object.entries(selectedVariant.attributes || {}).map(([k,v])=>`${k}: ${v}`).join(' · ')}</span>}</div>}
 
         <div className="mt-6 flex items-center gap-3">
           <div className="flex items-center rounded-xl border border-white/10">
@@ -574,7 +575,7 @@ function ProductDetail({ product, categories, related, recent, busy, saved, onSa
           {!product.demo_only && <p className="text-sm text-text-secondary">Total <b className="text-white">{inr(currentPrice * qty)}</b></p>}
         </div>
         <div className="mt-4 hidden gap-3 sm:flex">
-          <button disabled={!currentStock || product.demo_only || busy || (!!product.variants?.length && !selectedVariant)} onClick={() => onAdd(qty, variantId || undefined)} className="fortis-btn-primary flex-1">{product.demo_only ? 'Preview only' : busy ? 'Addingâ€¦' : 'Add to bag'}</button>
+          <button disabled={!currentStock || product.demo_only || busy || (!!product.variants?.length && !selectedVariant)} onClick={() => onAdd(qty, variantId || undefined)} className="fortis-btn-primary flex-1">{busy ? 'Adding...' : 'Add to bag'}</button>
           <button onClick={() => onBuy(qty, variantId || undefined)} disabled={!currentStock || product.demo_only || busy || (!!product.variants?.length && !selectedVariant)} className="fortis-btn-secondary">Buy now</button>
         </div>
 
@@ -591,8 +592,9 @@ function ProductDetail({ product, categories, related, recent, busy, saved, onSa
 
     {/* sticky mobile buy bar */}
     {!product.demo_only && <div className="fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-30 flex items-center gap-2 border-t border-white/[.08] bg-[#0a0a0d]/95 px-4 py-3 backdrop-blur-xl sm:hidden">
-      <div className="min-w-0"><p className="truncate text-[11px] text-text-muted">{product.name}</p><b>{product.demo_only ? 'Preview only' : inr(currentPrice * qty)}</b></div>
-      <button disabled={!currentStock || product.demo_only || busy || (!!product.variants?.length && !selectedVariant)} onClick={() => onAdd(qty, variantId || undefined)} className="fortis-btn-primary ml-auto flex-none px-5">{product.demo_only ? 'Preview only' : currentStock ? (busy ? 'Addingâ€¦' : 'Add to bag') : 'Sold out'}</button>
+      <div className="min-w-0"><p className="truncate text-[11px] text-text-muted">{product.name}</p><b>{inr(currentPrice * qty)}</b></div>
+      <button disabled={!currentStock || product.demo_only || busy || (!!product.variants?.length && !selectedVariant)} onClick={() => onAdd(qty, variantId || undefined)} className="fortis-btn-secondary ml-auto flex-none px-3">Add</button>
+      <button disabled={!currentStock || product.demo_only || busy || (!!product.variants?.length && !selectedVariant)} onClick={() => onBuy(qty, variantId || undefined)} className="fortis-btn-primary flex-none px-3">Buy now</button>
     </div>}
   </>;
 }
