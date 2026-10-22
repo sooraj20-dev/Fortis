@@ -67,7 +67,7 @@ const testimonials = [
   },
   {
     name: 'Ajith',
-    role: 'Director',
+    role: 'Film Director',
     avatar: '/testimonials/ajith.png',
     quote:
       "On set days I get maybe five hours of sleep. The plan drops to short mobility work then, and pushes hard when I'm rested. It's the first app that fits a schedule like mine.",
