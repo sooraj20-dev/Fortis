@@ -3,6 +3,7 @@ Fortis AI Fitness — FastAPI Backend
 Production-quality adaptive fitness intelligence platform.
 """
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -49,6 +50,27 @@ async def lifespan(app: FastAPI):
         mongo_db["body_scans"].create_index([("user_id", 1), ("scan_date", -1)])
         mongo_db["exercises"].create_index("difficulty")
         mongo_db["exercises"].create_index("category")
+
+        # FORTIS Store catalog and order indexes
+        mongo_db["store_products"].create_index("slug", unique=True)
+        mongo_db["store_products"].create_index("sku", unique=True, partialFilterExpression={"sku": {"$type": "string", "$gt": ""}})
+        mongo_db["store_products"].create_index([("category_id", 1), ("active", 1), ("featured", -1)])
+        mongo_db["store_products"].create_index([("name", "text"), ("description", "text"), ("brand", "text"), ("tags", "text")])
+        mongo_db["store_categories"].create_index("slug", unique=True)
+        mongo_db["store_carts"].create_index("user_id", unique=True)
+        mongo_db["store_orders"].create_index([("user_id", 1), ("created_at", -1)])
+        mongo_db["store_orders"].create_index("order_number", unique=True)
+        mongo_db["store_orders"].create_index([("user_id", 1), ("idempotency_key", 1)], unique=True)
+        mongo_db["store_inventory_logs"].create_index([("product_id", 1), ("created_at", -1)])
+        mongo_db["store_admin_audit"].create_index([("created_at", -1)])
+        mongo_db["store_settings"].create_index("key", unique=True)
+
+        # Demo catalog seeding is opt-in and restricted to an explicitly named
+        # development environment. Never seed sample merchandise into production.
+        if settings.APP_ENV.lower() == "development" and settings.STORE_DEMO_SEED_ENABLED:
+            from app.seed_data.store_demo import seed_demo_store
+            if seed_demo_store(mongo_db):
+                logger.info("Seeded non-purchasable demonstration store catalog")
 
         # AI usage tracking indexes
         mongo_db["ai_usage_logs"].create_index([("user_id", 1), ("started_at", -1)])
@@ -119,9 +141,14 @@ app.add_middleware(
 # Uploads are temporary on Vercel; durable app data belongs in MongoDB or object storage.
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+app.mount(
+    "/store-assets",
+    StaticFiles(directory=Path(__file__).resolve().parent / "static" / "store"),
+    name="store-assets",
+)
 
 # Include all routers
-from app.routers import auth, profile, dashboard, workouts, nutrition, recovery, fitness_state, coach, progress, vision, scan, usage  # noqa
+from app.routers import auth, profile, dashboard, workouts, nutrition, recovery, fitness_state, coach, progress, vision, scan, usage, store  # noqa
 
 app.include_router(auth.router)
 app.include_router(profile.router)
@@ -135,6 +162,7 @@ app.include_router(progress.router)
 app.include_router(vision.router)
 app.include_router(scan.router)
 app.include_router(usage.router)
+app.include_router(store.router)
 
 
 @app.get("/health", tags=["system"])

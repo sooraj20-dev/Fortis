@@ -39,6 +39,10 @@ pnpm-debug.log*
 # User uploads and generated media
 /uploads/
 /backend/uploads/
+!/backend/uploads/
+/backend/uploads/*
+!/backend/uploads/store/
+!/backend/uploads/store/*.svg
 
 # Editors and operating systems
 .vscode/

@@ -45,14 +45,15 @@ const AuthPage: React.FC = () => {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentUser = useAuthStore((s) => s.user);
   const onboardingComplete = useAuthStore((s) => s.onboardingComplete);
 
   // If already logged in, redirect directly to dashboard
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      navigate(currentUser?.is_admin ? '/admin/dashboard' : '/dashboard', { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, currentUser?.is_admin, navigate]);
 
   const verificationToken = searchParams.get('verify');
   useEffect(() => {
@@ -101,7 +102,7 @@ const AuthPage: React.FC = () => {
       { id: data.user_id, email: data.email, name: data.name, is_admin: data.is_admin },
       data.onboarding_complete,
     );
-    navigate('/dashboard', { replace: true });
+    navigate(data.is_admin ? '/admin/dashboard' : '/dashboard', { replace: true });
   };
 
   const handleLogin = async (e: React.FormEvent) => {

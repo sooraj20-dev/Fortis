@@ -12,6 +12,7 @@ import {
   LogOut,
   User as UserIcon,
   Activity,
+  ShoppingBag,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import BrandLogo from '../components/BrandLogo';
@@ -28,6 +29,7 @@ const navItems = [
   { name: 'Vision', path: '/vision', icon: Video },
   { name: 'AI Usage', path: '/usage', icon: Activity },
   { name: 'AI Coach', path: '/coach', icon: MessageSquareQuote },
+  { name: 'FORTIS Store', path: '/store', icon: ShoppingBag },
   { name: 'Profile', path: '/profile', icon: UserIcon },
 ];
 

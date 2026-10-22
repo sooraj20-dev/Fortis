@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     MONGODB_URL: str
     MONGODB_DB_NAME: str = "fortis"
+    APP_ENV: str = "production"
+    STORE_DEMO_SEED_ENABLED: bool = False
     DATABASE_URL: str = "sqlite:///./fortis.db"
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
