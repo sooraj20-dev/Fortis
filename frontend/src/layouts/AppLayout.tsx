@@ -23,14 +23,14 @@ const navItems = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { name: 'Scan', path: '/scan', icon: ScanLine },
   { name: 'Workout', path: '/workout', icon: Dumbbell },
-  { name: 'Nutrition', path: '/nutrition', icon: Utensils },
-  { name: 'Recovery', path: '/recovery', icon: Moon },
   { name: 'Progress', path: '/progress', icon: TrendingUp },
+  { name: 'Nutrition', path: '/nutrition', icon: Utensils },
   { name: 'Vision', path: '/vision', icon: Video },
-  { name: 'AI Usage', path: '/usage', icon: Activity },
   { name: 'AI Coach', path: '/coach', icon: MessageSquareQuote },
-  { name: 'FORTIS Store', path: '/store', icon: ShoppingBag },
+  { name: 'Recovery', path: '/recovery', icon: Moon },
   { name: 'Profile', path: '/profile', icon: UserIcon },
+  { name: 'FORTIS Store', path: '/store', icon: ShoppingBag },
+  { name: 'AI Usage', path: '/usage', icon: Activity },
 ];
 
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
