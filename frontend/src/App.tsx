@@ -4,6 +4,7 @@ import { AppLayout } from './layouts/AppLayout';
 import SplashScreen from './components/SplashScreen';
 import { useAuthStore } from './stores/authStore';
 import { getCached } from './services/api';
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 // â”€â”€ Lazy-loaded pages (each becomes its own JS chunk) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const Landing        = lazy(() => import('./pages/Landing'));
@@ -325,14 +326,7 @@ function App() {
               </RedirectIfAuthed>
             }
           />
-          <Route
-            path="*"
-            element={
-              <RedirectIfAuthed>
-                <Navigate to="/landing" replace />
-              </RedirectIfAuthed>
-            }
-          />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
         </Suspense>
       </Router>

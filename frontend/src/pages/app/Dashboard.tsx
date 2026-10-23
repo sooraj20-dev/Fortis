@@ -18,13 +18,15 @@ import {
   Zap,
   Calendar,
   Layers,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api, { getCached } from '../../services/api';
 import { getLatestScan } from '../../services/scanApi';
 import { useAuthStore } from '../../stores/authStore';
 import { useDashboardStore } from '../../stores/dashboardStore';
-import SplashScreen from '../../components/SplashScreen';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import Onboarding from '../Onboarding';
 import type { ScanResult } from '../../types/scan';
 
@@ -157,7 +159,29 @@ export const Dashboard: React.FC = () => {
   };
 
   if (loading && !data) {
-    return <SplashScreen isLoader message="Synthesizing your Personal Fitness State…" />;
+    return <DashboardSkeleton />;
+  }
+
+  // Error state when no data and not loading
+  if (!loading && !data) {
+    return (
+      <div className="max-w-6xl mx-auto flex flex-col items-center justify-center py-20 text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-danger/10 border border-danger/30 flex items-center justify-center">
+          <AlertCircle className="w-8 h-8 text-danger" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-base font-bold text-text-primary">Dashboard couldn't load</p>
+          <p className="text-sm text-text-secondary max-w-xs">Check your connection and try again.</p>
+        </div>
+        <button
+          onClick={() => fetchDashboardData(true)}
+          className="fortis-btn-secondary flex items-center gap-2 py-2 px-5 text-sm"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Retry
+        </button>
+      </div>
+    );
   }
 
   // Onboarding summary data helpers

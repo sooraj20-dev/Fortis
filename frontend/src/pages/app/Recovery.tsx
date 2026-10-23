@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react'; 
 import { 
   Moon, 
   BatteryCharging, 
@@ -6,9 +6,11 @@ import {
   Heart, 
   CheckCircle2, 
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import api, { getCached } from '../../services/api';
+import { toast } from '../../stores/uiStore';
 
 export const RecoveryPage: React.FC = () => {
   const [data, setData] = useState<any>(null);
@@ -49,9 +51,11 @@ export const RecoveryPage: React.FC = () => {
       const res = await api.get('/api/recovery/today');
       setData(res.data);
       setSubmitted(true);
+      toast.success('Recovery check-in logged! Your training load adapts automatically.');
     } catch (err) {
       console.error('Failed to log recovery:', err);
       setError('Recovery could not be saved. Check your connection and retry.');
+      toast.error('Recovery check-in failed. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -163,9 +167,9 @@ export const RecoveryPage: React.FC = () => {
         <button 
           onClick={handleLogRecovery}
           disabled={saving}
-          className="fortis-btn-primary w-full py-3"
+          className="fortis-btn-primary w-full py-3 flex items-center justify-center gap-2"
         >
-          {saving ? 'Saving recovery check-in…' : 'Submit Recovery Check-in'}
+          {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving check-in…</> : 'Submit Recovery Check-in'}
         </button>
 
         {error && <div role="alert" className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-300">{error}</div>}

@@ -766,10 +766,17 @@ const WorkoutInner: React.FC = () => {
   }
   if (loadError) {
     return (
-      <div className="max-w-4xl mx-auto p-4 sm:p-8 text-center space-y-3 bg-dark-card border border-dark-border rounded-2xl">
-        <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
-        <p className="text-sm text-text-secondary">{loadError}</p>
-        <button onClick={() => fetchWorkout()} className="fortis-btn-primary py-2 px-5 text-xs">Try again</button>
+      <div className="max-w-4xl mx-auto p-8 flex flex-col items-center text-center space-y-4 bg-dark-card border border-dark-border rounded-2xl">
+        <div className="w-14 h-14 rounded-2xl bg-danger/10 border border-danger/30 flex items-center justify-center">
+          <AlertCircle className="w-7 h-7 text-danger" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-base font-bold text-text-primary">Couldn't load your workout</p>
+          <p className="text-sm text-text-secondary">{loadError}</p>
+        </div>
+        <button onClick={() => fetchWorkout()} className="fortis-btn-secondary flex items-center gap-2 py-2.5 px-5 text-sm">
+          <RotateCcw className="w-4 h-4" />Try again
+        </button>
       </div>
     );
   }
