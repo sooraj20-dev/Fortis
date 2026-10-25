@@ -1,22 +1,31 @@
 ﻿import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import {
-  ArrowRight, Check, ChevronDown, CircleAlert, Copy, Dumbbell, Heart, Home, Minus, Package, Plus,
+  ArrowRight, Check, ChevronDown, CircleAlert, Copy, Heart, Home, Minus, Package, Plus,
   Search, Share2, ShieldCheck, ShoppingBag, SlidersHorizontal, Sparkles, Trash2, Truck, X, Zap,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import BrandLogo from '../../components/BrandLogo';
 import { storeApi } from './storeApi';
 import type { CartSummary, StoreCategory, StoreProduct } from './storeTypes';
 import { inr } from './storeTypes';
 import { API_URL } from '../../services/api';
 
 const imageSrc = (image: string) => {
-  const normalized = image.startsWith('/uploads/store/')
-    ? image.replace('/uploads/store/', '/store-assets/').replace(/\.svg$/, '.webp')
-    : image;
-  return normalized.startsWith('/') ? `${API_URL}${normalized}` : normalized;
+  return image.startsWith('/') ? `${API_URL}${image}` : image;
 };
 const productImageSrc = imageSrc;
+
+const createIdempotencyKey = () => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues === 'function') globalThis.crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
@@ -73,11 +82,11 @@ function ProductCard({ product, categories, onAdd, onBuy, onQuick, saved, onSave
   saved: boolean; onSave: (p: StoreProduct) => void; busy: boolean; className?: string;
 }) {
   const stock = stockInfo(product.stock_quantity);
-  return <article className={`group min-w-0 ${className}`}>
-    <div className="relative overflow-hidden rounded-2xl bg-[#17171d] aspect-[4/4.4]">
+  return <article className={`group flex min-w-0 flex-col ${className}`}>
+    <div className="relative aspect-[4/4.4] overflow-hidden rounded-xl bg-[#17171d] sm:rounded-2xl">
       <Link to={`/store/product/${product.slug}`} aria-label={`View ${product.name}`} className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
         {product.image
-          ? <img src={productImageSrc(product.image)} alt={product.name} loading="lazy" className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04] ${product.stock_quantity || product.demo_only ? '' : 'opacity-50 grayscale'}`} />
+          ? <img src={productImageSrc(product.image)} alt={product.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
           : <div className="grid h-full w-full place-items-center bg-[radial-gradient(ellipse_at_70%_20%,rgba(249,115,22,.15),transparent_55%),linear-gradient(140deg,#202027,#101014)]"><Package className="h-12 w-12 text-white/20" aria-hidden="true" /></div>}
       </Link>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-2.5">
@@ -86,7 +95,7 @@ function ProductCard({ product, categories, onAdd, onBuy, onQuick, saved, onSave
           {product.stock_quantity > 0 && product.stock_quantity <= 5 && <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[10px] font-bold text-black">{stock.label}</span>}
         </div>
         <button onClick={() => onSave(product)} aria-pressed={saved} aria-label={saved ? `Remove ${product.name} from saved` : `Save ${product.name}`}
-          className="pointer-events-auto grid h-9 w-9 place-items-center rounded-full bg-black/60 backdrop-blur transition active:scale-90">
+          className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-black/65 backdrop-blur transition hover:bg-black/85 active:scale-90">
           <Heart size={16} className={`transition ${saved ? 'fill-brand text-brand scale-110' : 'text-white'}`} />
         </button>
       </div>
@@ -95,18 +104,18 @@ function ProductCard({ product, categories, onAdd, onBuy, onQuick, saved, onSave
         <Zap size={13} /> Quick view
       </button>
     </div>
-    <div className="pt-3">
+    <div className="flex flex-1 flex-col pt-3">
       <div className="truncate text-[11px] text-text-muted">{categoryLabel(categories, product.category_id)}</div>
-      <Link to={`/store/product/${product.slug}`} className="mt-0.5 block truncate text-[15px] font-semibold text-text-primary hover:text-brand-light">{product.name}</Link>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="font-bold text-white">{inr(product.price_paise)}</span>
-        {product.variants?.length ? <Link to={`/store/product/${product.slug}`} className="flex h-9 items-center justify-center rounded-lg bg-white/[.07] px-3 text-xs font-semibold hover:bg-brand">Options</Link>
-          : <div className="flex gap-1.5">
+      <Link to={`/store/product/${product.slug}`} className="mt-1 line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-text-primary hover:text-brand-light sm:text-[15px]">{product.name}</Link>
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-3">
+        <span className="font-bold tabular-nums text-white">{inr(product.price_paise)}</span>
+        {product.variants?.length ? <Link to={`/store/product/${product.slug}`} className="flex h-9 w-full items-center justify-center rounded-lg bg-white/[.07] px-3 text-xs font-semibold hover:bg-brand">Choose options</Link>
+          : <div className="grid w-full grid-cols-2 gap-1.5">
             <button onClick={() => onAdd(product)} disabled={!product.stock_quantity || product.demo_only || busy}
-              className="flex h-9 items-center justify-center gap-1 rounded-lg bg-white/[.07] px-2.5 text-xs font-semibold text-white transition hover:bg-white/15 active:scale-95 disabled:opacity-40"
+              className="flex h-9 items-center justify-center gap-1 rounded-lg bg-white/[.07] px-2 text-[11px] font-semibold text-white transition hover:bg-white/15 active:scale-95 disabled:opacity-40 sm:text-xs"
               aria-label={`Add ${product.name} to bag`}><Plus size={13} /> Add</button>
             <button onClick={() => onBuy(product)} disabled={!product.stock_quantity || product.demo_only || busy}
-              className="flex h-9 items-center justify-center rounded-lg bg-brand px-2.5 text-xs font-semibold text-white transition hover:bg-brand-light active:scale-95 disabled:opacity-40">Buy now</button>
+              className="flex h-9 items-center justify-center rounded-lg bg-brand px-2 text-[11px] font-semibold text-white transition hover:bg-brand-light active:scale-95 disabled:opacity-40 sm:text-xs">Buy now</button>
           </div>}
       </div>
     </div>
@@ -210,17 +219,23 @@ function QuickView({ product, categories, onClose, onAdd, busy }: { product: Sto
 export default function StorePage() {
   const location = useLocation(); const navigate = useNavigate(); const [searchParams, setSearchParams] = useSearchParams();
   const authenticated = useAuthStore(s => s.isAuthenticated); const user = useAuthStore(s => s.user);
+  const brandHome = user?.is_admin ? '/admin/dashboard' : authenticated ? '/dashboard' : '/store';
 
   const [categories, setCategories] = useState<StoreCategory[]>([]);
   const [catalog, setCatalog] = useState<{ items: StoreProduct[]; total: number; pages: number }>({ items: [], total: 0, pages: 0 });
+  const [featuredProducts, setFeaturedProducts] = useState<StoreProduct[]>([]);
+  const [featuredLoaded, setFeaturedLoaded] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
+  const [catalogRetry, setCatalogRetry] = useState(0);
   const [cart, setCart] = useState<CartSummary>(readGuest);
   const [product, setProduct] = useState<StoreProduct | null>(null);
+  const [productLoadFailed, setProductLoadFailed] = useState(false);
   const [related, setRelated] = useState<StoreProduct[]>([]);
   const [orders, setOrders] = useState<any[]>([]); const [order, setOrder] = useState<any>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState(''); const [toast, setToast] = useState(''); const [preview, setPreview] = useState<any>(null);
   const [drawer, setDrawer] = useState(false); const [quick, setQuick] = useState<StoreProduct | null>(null);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [bump, setBump] = useState(false);
   const [saved, updateSaved] = useStoredList<StoreProduct>('fortis-store-saved');
   const [recent, updateRecent] = useStoredList<StoreProduct>('fortis-store-recent');
@@ -237,6 +252,12 @@ export default function StorePage() {
 
   /* data */
   useEffect(() => { storeApi.categories().then(setCategories).catch(() => setCategories([])); }, []);
+  useEffect(() => {
+    storeApi.products({ search: '', category: '', sort: 'recommended', page: 1, available: false, featured: true, limit: 9 })
+      .then(result => setFeaturedProducts(result.items))
+      .catch(() => setFeaturedProducts([]))
+      .finally(() => setFeaturedLoaded(true));
+  }, []);
   useEffect(() => {
     if (authenticated) {
       const guest = readGuest();
@@ -258,18 +279,35 @@ export default function StorePage() {
         .finally(() => { if (alive) setLoadingCatalog(false); });
     }
     return () => { alive = false; };
-  }, [q, category, sort, page, available, isCatalog, showSaved]);
+  }, [q, category, sort, page, available, isCatalog, showSaved, catalogRetry]);
   useEffect(() => {
     if (isProduct && slug) {
-      setProduct(null); setRelated([]);
+      setProduct(null); setRelated([]); setProductLoadFailed(false);
       storeApi.product(slug).then(p => {
         setProduct(p);
         updateRecent(l => [p, ...l.filter(x => x.id !== p.id)].slice(0, 8));
         storeApi.products({ search: '', category: p.category_id, sort: 'recommended', page: 1, available: false, limit: 5 })
           .then(d => setRelated(d.items.filter((x: StoreProduct) => x.id !== p.id).slice(0, 4))).catch(() => setRelated([]));
-      }).catch(() => setError('This product could not be found.'));
+      }).catch(() => { setError('This product could not be found.'); setProductLoadFailed(true); });
     }
   }, [slug, isProduct, updateRecent]);
+  useEffect(() => {
+    const needsRefresh = (item: StoreProduct): boolean => Boolean(item.image && (
+      item.image.startsWith('/uploads/store/') ||
+      (item.image.startsWith('/store-assets/') && !item.image.startsWith(`/store-assets/${item.category_id}/`))
+    ));
+    if (!recent.some(needsRefresh)) return;
+
+    let cancelled = false;
+    Promise.all(recent.map(item => needsRefresh(item)
+      ? storeApi.product(item.slug).catch(() => null)
+      : Promise.resolve(item)))
+      .then(items => {
+        if (cancelled) return;
+        updateRecent(() => items.filter((item): item is StoreProduct => item !== null));
+      });
+    return () => { cancelled = true; };
+  }, [recent, updateRecent]);
   useEffect(() => { if (isOrders) storeApi.orders().then(setOrders).catch(() => setError('Your orders could not be loaded.')); }, [isOrders]);
   useEffect(() => { if (orderId && orderId !== 'undefined') storeApi.order(orderId).then(setOrder).catch(() => setError('Order not found.')); }, [orderId]);
 
@@ -312,7 +350,7 @@ export default function StorePage() {
         if ((found?.quantity || 0) + qty > availableStock) throw new Error('That is the maximum available quantity.');
         const next = found
           ? { ...existing, items: existing.items.map(i => i.item_id === found.item_id ? { ...i, quantity: i.quantity + qty, line_total_paise: (i.quantity + qty) * i.unit_price_paise } : i) }
-          : { ...existing, items: [...existing.items, { item_id: crypto.randomUUID(), product: p, quantity: qty, variant_id: variantId, variant_name: selected?.name, unit_price_paise: unitPrice, line_total_paise: unitPrice * qty, available: true }] };
+          : { ...existing, items: [...existing.items, { item_id: createIdempotencyKey(), product: p, quantity: qty, variant_id: variantId, variant_name: selected?.name, unit_price_paise: unitPrice, line_total_paise: unitPrice * qty, available: true }] };
         const done = recalc(next); writeGuest(done); setCart(done);
       }
       setToast(`${p.name} added to your bag`); if (openDrawer) setDrawer(true);
@@ -339,11 +377,16 @@ export default function StorePage() {
   };
 
   const heading = isProduct ? product?.name || 'Product' : isCart ? 'Your bag' : isCheckout ? 'Checkout' : isOrders || orderId ? 'Orders' : isAdmin ? 'Manage' : showSaved ? 'Saved' : category ? categoryLabel(categories, category) : 'Shop';
-  const heroImage = 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=1500&q=85';
   const landing = isCatalog && !q && !category && page === 1 && !showSaved && !available;
   const list = showSaved ? saved : catalog.items;
   const card = (p: StoreProduct, className = '') => <ProductCard key={p.id} className={className} product={p} categories={categories} onAdd={x => addToCart(x)} onBuy={async x => { if (await addToCart(x, 1, false)) goCheckout(); }} onQuick={setQuick} saved={isSaved(p)} onSave={toggleSaved} busy={busyId === p.id} />;
-  const featured = catalog.items.filter(p => p.featured);
+  const categoryNavigation = !showSaved && categories.length > 0 && <div className="mb-6">
+    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[.15em] text-text-muted">Shop by category</p>
+    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:flex-wrap sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Shop by category">
+      <button onClick={() => setFilter('category', '')} aria-pressed={!category} className={`min-h-10 flex-none rounded-full border px-4 text-xs font-semibold transition ${!category ? 'border-brand bg-brand text-white' : 'border-white/10 text-text-secondary hover:border-white/30'}`}>All</button>
+      {categories.map(c => <button key={c.id} onClick={() => setFilter('category', category === c.slug ? '' : c.slug)} aria-pressed={category === c.slug} className={`min-h-10 flex-none whitespace-nowrap rounded-full border px-4 text-xs font-semibold transition ${category === c.slug ? 'border-brand bg-brand text-white' : 'border-white/10 text-text-secondary hover:border-white/30'}`}>{c.name}</button>)}
+    </div>
+  </div>;
   const activeFilters = [
     q && { k: 'q', label: `â€œ${q}â€` }, category && { k: 'category', label: categoryLabel(categories, category) },
     available && { k: 'available', label: 'In stock' }, sort !== 'recommended' && { k: 'sort', label: 'Sorted' },
@@ -354,8 +397,8 @@ export default function StorePage() {
 
   return <div className="mx-auto max-w-[1450px] px-4 pb-28 text-text-primary sm:px-6 md:pb-10">
     {/* header */}
-    <header className="sticky top-0 z-30 -mx-4 mb-5 flex items-center justify-between gap-3 border-b border-white/[.07] bg-[#0a0a0d]/85 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6">
-      <Link to="/store" className="flex items-center gap-2.5">
+    <header className="sticky top-0 z-30 -mx-4 mb-5 flex items-center justify-between gap-3 border-b border-white/[.07] bg-[#0a0a0d]/95 px-4 py-2.5 sm:-mx-6 sm:px-6">
+      <Link to={brandHome} aria-label={user?.is_admin ? 'Fortis admin dashboard' : authenticated ? 'Fortis user dashboard' : 'Fortis Store'} className="flex items-center gap-2.5">
         <img src="/fortis-mark.png" alt="FORTIS" className="h-10 w-10 object-contain" />
         <span className="leading-tight"><b className="block text-sm tracking-[.14em]">FORTIS <span className="text-brand-light">STORE</span></b><small className="hidden text-[10px] text-text-muted sm:block">Train better. Choose smarter.</small></span>
       </Link>
@@ -363,12 +406,12 @@ export default function StorePage() {
         <Link to="/store?saved=1" className="relative hidden h-10 items-center gap-1.5 rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex"><Heart size={15} /> Saved{saved.length > 0 && <span className="rounded-full bg-white/10 px-1.5 text-[10px]">{saved.length}</span>}</Link>
         <Link to="/store/orders" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Orders</Link>
         {user?.is_admin && <Link to="/admin/dashboard" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Manage</Link>}
-        {!user?.is_admin && <Link to="/admin/login" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Admin</Link>}
+        {!user?.is_admin && <Link to="/auth/login" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Admin</Link>}
         <button onClick={() => setDrawer(true)} aria-label={`Open bag, ${count} items`} className="flex h-10 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-semibold transition hover:border-brand/60">
           <ShoppingBag size={16} /> <span className="hidden sm:inline">Bag</span>
           <span className={`grid min-w-[20px] place-items-center rounded-full bg-brand px-1.5 text-[11px] text-white transition-transform duration-300 ${bump ? 'scale-125' : ''}`}>{count}</span>
         </button>
-        {user && <span className="hidden max-w-[120px] truncate text-xs text-text-muted lg:inline">{user.name}</span>}
+        {user && <Link to={brandHome} className="hidden max-w-[120px] truncate text-xs text-text-muted hover:text-white lg:inline">{user.name}</Link>}
       </nav>
     </header>
 
@@ -383,38 +426,25 @@ export default function StorePage() {
     {/* â”€â”€â”€â”€â”€â”€â”€â”€â”€ catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
     {isCatalog && <>
       {landing && <>
-        <section className="relative mb-6 overflow-hidden rounded-3xl bg-[#101014]">
-          <img src={heroImage} alt="Athlete preparing for a strength training session" className="absolute inset-0 h-full w-full object-cover object-[center_43%] opacity-50" />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#09090c] via-[#09090c]/85 to-[#09090c]/20" />
-          <div className="relative z-[1] max-w-2xl px-5 py-10 sm:px-12 sm:py-16">
-            <h1 className="text-4xl font-black leading-[.98] tracking-tight sm:text-6xl">Gear up.<br /><span className="text-brand-light">Show up.</span></h1>
-            <p className="mt-4 max-w-md text-sm leading-6 text-white/75 sm:text-base">Equipment, essentials and training gear for the work you put in.</p>
-            <form onSubmit={(e: FormEvent) => { e.preventDefault(); setFilter('q', searchText.trim()); }} className="mt-6 flex max-w-md items-center gap-2 rounded-2xl border border-white/15 bg-black/50 p-1.5 backdrop-blur">
-              <Search size={16} className="ml-3 flex-none text-text-muted" />
-              <input value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search gear, brands, essentials" aria-label="Search products" className="min-w-0 flex-1 bg-transparent px-1 py-2 text-sm outline-none placeholder:text-white/40" />
-              <button className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white">Search</button>
-            </form>
-            {categories.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{categories.slice(0, 4).map(c => <button key={c.id} onClick={() => setFilter('category', c.slug)} className="rounded-full border border-white/15 bg-black/30 px-3 py-1.5 text-xs text-white/85 backdrop-blur transition hover:border-brand hover:text-white">{c.name}</button>)}</div>}
+        <section className="mb-6 border-b border-white/[.08] pb-6 pt-3 sm:pb-8 sm:pt-7">
+          <p className="text-[10px] font-bold tracking-[.2em] text-brand-light">EQUIP YOUR POTENTIAL</p>
+          <div className="mt-2 max-w-3xl">
+              <h1 className="text-3xl font-black leading-[1.02] tracking-tight sm:text-5xl">BUILD YOUR <span className="text-brand-light">STRONGER SELF.</span></h1>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-text-secondary sm:text-base">Training essentials, fitness equipment, and recovery products selected for your journey.</p>
           </div>
         </section>
 
-        <ul className="mb-10 grid gap-2 text-xs text-text-secondary sm:grid-cols-3">
-          {[[ShieldCheck, 'Prices and stock are verified on the server when you order.'], [Truck, 'Shipping and taxes are not configured yet.'], [Package, 'Your bag is saved on this device, even before you sign in.']].map(([Icon, text]: any) =>
-            <li key={text} className="flex items-center gap-2.5 rounded-xl border border-white/[.07] bg-white/[.02] px-3.5 py-3"><Icon size={16} className="flex-none text-brand-light" />{text}</li>)}
+        <ul className="mb-7 grid gap-2 text-xs text-text-secondary sm:grid-cols-3">
+          {[[ShieldCheck, 'Price and stock checks at checkout.'], [Truck, 'Shipping details shown before payment.'], [Package, 'Your bag stays saved on this device.']].map(([Icon, text]: any) =>
+            <li key={text} className="flex items-center gap-2.5 border-l-2 border-brand/70 bg-white/[.02] px-3 py-2.5"><Icon size={15} className="flex-none text-brand-light" />{text}</li>)}
         </ul>
 
-        {categories.length > 0 && <Rail title="Shop by category" subtitle="Tap a category to filter the catalog">
-          {categories.map(c => <Link key={c.id} to={`/store?category=${c.slug}`} className="group relative aspect-[1.1] w-[42vw] max-w-[230px] flex-none snap-start overflow-hidden rounded-2xl bg-dark-card sm:w-[200px]">
-            {c.image ? <img src={imageSrc(c.image)} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover opacity-60 transition duration-500 group-hover:scale-105 group-hover:opacity-80" />
-              : <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(ellipse_at_75%_20%,rgba(249,115,22,.19),transparent_55%),linear-gradient(140deg,#202027,#101014)]"><Dumbbell className="h-9 w-9 text-white/15" /></div>}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
-            <div className="absolute inset-x-3 bottom-3"><b className="text-sm text-white">{c.name}</b><span className="mt-0.5 block text-[11px] text-white/65">{c.product_count} {c.product_count === 1 ? 'product' : 'products'}</span></div>
-          </Link>)}
-        </Rail>}
-
-        {featured.length > 0 && <Rail title="Featured picks" subtitle="Hand-picked by the Fortis team">{featured.slice(0, 8).map(p => card(p, 'w-[44vw] max-w-[230px] flex-none snap-start sm:w-[220px]'))}</Rail>}
+        {categoryNavigation}
+        {featuredLoaded && <Rail title="Featured picks" subtitle={featuredProducts.length ? 'Selected by the Fortis team' : undefined}>{featuredProducts.length ? featuredProducts.map(p => card(p, 'w-[44vw] max-w-[230px] flex-none snap-start sm:w-[220px]')) : <p className="w-full rounded-lg border border-white/[.08] px-4 py-5 text-sm text-text-muted">New featured gear is being curated.</p>}</Rail>}
         {recent.length > 0 && <Rail title="Recently viewed">{recent.slice(0, 8).map(p => card(p, 'w-[44vw] max-w-[230px] flex-none snap-start sm:w-[220px]'))}</Rail>}
       </>}
+
+      {!landing && categoryNavigation}
 
       <section id="catalog" className="scroll-mt-20">
         {catalog.items.some(p => p.demo_only) && <p className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-100">Sample training gear for preview only. Listings have no verified prices or inventory and cannot be purchased. Replace these with verified catalog data before selling.</p>}
@@ -423,17 +453,22 @@ export default function StorePage() {
             <h2 className="text-xl font-bold">{showSaved ? 'Saved for later' : q ? `Results for â€œ${q}â€` : category ? categoryLabel(categories, category) : 'All gear'}</h2>
             <p className="mt-0.5 text-xs text-text-muted" aria-live="polite">{showSaved ? `${saved.length} saved on this device` : loadingCatalog ? 'Loadingâ€¦' : `${catalog.total} ${catalog.total === 1 ? 'product' : 'products'}`}</p>
           </div>
-          {!showSaved && <label className="relative w-full sm:w-72"><Search size={15} className="absolute left-3 top-3 text-text-muted" /><input className="fortis-input h-10 w-full pl-9 text-sm" value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search gear" aria-label="Search products" />{searchText && <button type="button" onClick={() => { setSearchText(''); setFilter('q', ''); }} aria-label="Clear search" className="absolute right-2 top-2 grid h-6 w-6 place-items-center text-text-muted"><X size={14} /></button>}</label>}
+          {!showSaved && <label className="relative w-full sm:w-80"><Search size={15} className="absolute left-3 top-3 text-text-muted" /><input className="fortis-input h-10 w-full pl-9 text-sm" value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search name, brand, tags, size" aria-label="Search products" />{searchText && <button type="button" onClick={() => { setSearchText(''); setFilter('q', ''); }} aria-label="Clear search" className="absolute right-2 top-2 grid h-6 w-6 place-items-center text-text-muted"><X size={14} /></button>}</label>}
         </div>
 
-        {!showSaved && <div className="sticky top-[65px] z-20 -mx-4 mb-5 flex items-center gap-2 overflow-x-auto bg-[#0a0a0d]/90 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button onClick={() => setFilter('category', '')} className={`flex-none rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${!category ? 'border-brand bg-brand text-white' : 'border-white/10 text-text-secondary hover:border-white/30'}`}>All</button>
-          {categories.map(c => <button key={c.id} onClick={() => setFilter('category', category === c.slug ? '' : c.slug)} aria-pressed={category === c.slug} className={`flex-none whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${category === c.slug ? 'border-brand bg-brand text-white' : 'border-white/10 text-text-secondary hover:border-white/30'}`}>{c.name}</button>)}
-          <span className="mx-1 h-5 w-px flex-none bg-white/10" />
-          <button onClick={() => setFilter('available', available ? '' : 'true')} aria-pressed={available} className={`flex flex-none items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium ${available ? 'border-brand text-brand-light' : 'border-white/10 text-text-secondary'}`}><SlidersHorizontal size={12} /> In stock</button>
-          <select className="fortis-input h-8 w-auto flex-none rounded-full py-0 text-xs" value={sort} onChange={e => setFilter('sort', e.target.value)} aria-label="Sort products">
-            <option value="recommended">Recommended</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option><option value="newest">Newest first</option><option value="name">Name, Aâ€“Z</option>
-          </select>
+        {!showSaved && <div className="sticky top-[61px] z-20 -mx-4 mb-5 border-y border-white/[.06] bg-[#0a0a0d]/95 px-4 py-2.5 sm:-mx-6 sm:px-6">
+          <div className="flex items-center justify-between gap-3">
+            <span className="hidden text-xs text-text-muted sm:block">Refine your results</span>
+            <div className="hidden items-center gap-2 sm:flex">
+              <button onClick={() => setFilter('available', available ? '' : 'true')} aria-pressed={available} className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${available ? 'border-brand text-brand-light' : 'border-white/10 text-text-secondary hover:border-white/25'}`}><SlidersHorizontal size={13} /> In stock</button>
+              <select className="fortis-input h-9 w-auto min-w-40 py-0 text-xs" value={sort} onChange={e => setFilter('sort', e.target.value)} aria-label="Sort products">
+                <option value="recommended">Recommended</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option><option value="newest">Newest first</option><option value="name">Name, Aâ€“Z</option>
+              </select>
+            </div>
+            <button onClick={() => setShowMobileFilters(open => !open)} aria-expanded={showMobileFilters} className="flex h-10 items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-semibold text-text-secondary sm:hidden"><SlidersHorizontal size={14} /> Filters{(available || sort !== 'recommended') && <span className="h-1.5 w-1.5 rounded-full bg-brand" />}</button>
+            <label className="flex items-center gap-2 text-xs text-text-secondary sm:hidden"><span>Sort</span><select className="fortis-input h-10 w-auto max-w-[190px] py-0 text-xs" value={sort} onChange={e => setFilter('sort', e.target.value)} aria-label="Sort products"><option value="recommended">Recommended</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option><option value="newest">Newest first</option><option value="name">Name, Aâ€“Z</option></select></label>
+          </div>
+          {showMobileFilters && <div className="mt-2 flex items-center justify-between border-t border-white/[.06] pt-2 sm:hidden"><span className="text-xs text-text-secondary">Availability</span><button onClick={() => setFilter('available', available ? '' : 'true')} aria-pressed={available} className={`rounded-lg border px-3 py-2 text-xs font-medium ${available ? 'border-brand bg-brand/10 text-brand-light' : 'border-white/10 text-text-secondary'}`}>{available ? 'In stock only' : 'All items'}</button></div>}
         </div>}
 
         {activeFilters.length > 0 && !showSaved && <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
@@ -442,12 +477,12 @@ export default function StorePage() {
         </div>}
 
         {loadingCatalog && !showSaved ? <ProductSkeletons />
-          : list.length ? <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4 xl:gap-x-6">{list.map(p => card(p))}</div>
+          : list.length ? <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4 xl:gap-x-6 2xl:grid-cols-5">{list.map(p => card(p))}</div>
             : <div className="rounded-2xl border border-white/[.07] bg-white/[.02] px-5 py-16 text-center">
               {showSaved ? <Heart className="mx-auto mb-3 h-8 w-8 text-text-muted" /> : <Package className="mx-auto mb-3 h-8 w-8 text-text-muted" />}
               <h3 className="font-semibold">{showSaved ? 'Nothing saved yet' : error ? 'Catalog unavailable' : 'No gear matches this search'}</h3>
               <p className="mt-1 text-sm text-text-muted">{showSaved ? 'Tap the heart on any product to keep it here.' : error ? 'Please refresh or try again shortly.' : 'Try another keyword or clear your filters.'}</p>
-              <button onClick={() => setSearchParams({})} className="mt-4 text-sm font-semibold text-brand-light">{showSaved ? 'Browse the store' : 'Clear filters'}</button>
+              <button onClick={() => error ? setCatalogRetry(retry => retry + 1) : setSearchParams({})} className="mt-4 text-sm font-semibold text-brand-light">{showSaved ? 'Browse the store' : error ? 'Try again' : 'Clear filters'}</button>
             </div>}
 
         {!showSaved && catalog.pages > 1 && <div className="mt-10 flex items-center justify-center gap-4">
@@ -460,8 +495,9 @@ export default function StorePage() {
 
     {/* â”€â”€â”€â”€â”€â”€â”€â”€â”€ product detail â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
     {isProduct && (product ? <ProductDetail product={product} categories={categories} related={related} recent={recent.filter(r => r.id !== product.id)} busy={busyId === product.id} saved={isSaved(product)} onSave={toggleSaved}
-      onAdd={(qty, variantId) => addToCart(product, qty, true, variantId)} onBuy={async (qty, variantId) => { if (await addToCart(product, qty, false, variantId)) navigate('/store/checkout'); }} setToast={setToast} card={card} />
-      : <div className="grid gap-8 lg:grid-cols-2"><Skeleton className="aspect-square !rounded-3xl" /><div className="space-y-4"><Skeleton className="h-4 w-24" /><Skeleton className="h-10 w-3/4" /><Skeleton className="h-8 w-32" /><Skeleton className="h-32 w-full" /></div></div>)}
+      onAdd={(qty, variantId) => addToCart(product, qty, true, variantId)} onBuy={async (qty, variantId) => { if (await addToCart(product, qty, false, variantId)) goCheckout(); }} setToast={setToast} card={card} />
+      : productLoadFailed ? <div className="rounded-xl border border-white/[.08] py-16 text-center"><Package className="mx-auto mb-3 h-9 w-9 text-text-muted"/><h1 className="font-semibold">Product unavailable</h1><p className="mt-1 text-sm text-text-muted">This product may have been removed from the catalog.</p><Link to="/store" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-brand-light">Back to shop <ArrowRight size={14}/></Link></div>
+        : <div className="grid gap-8 lg:grid-cols-2"><Skeleton className="aspect-square !rounded-3xl" /><div className="space-y-4"><Skeleton className="h-4 w-24" /><Skeleton className="h-10 w-3/4" /><Skeleton className="h-8 w-32" /><Skeleton className="h-32 w-full" /></div></div>)}
 
     {/* â”€â”€â”€â”€â”€â”€â”€â”€â”€ bag page â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
     {isCart && <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
@@ -534,10 +570,10 @@ function ProductDetail({ product, categories, related, recent, busy, saved, onSa
   onSave: (p: StoreProduct) => void; onAdd: (qty: number, variantId?: string) => void; onBuy: (qty: number, variantId?: string) => void; setToast: (s: string) => void; card: (p: StoreProduct, c?: string) => React.ReactNode;
 }) {
   const [qty, setQty] = useState(1);
-  const [variantId, setVariantId] = useState(product.variants?.[0]?.id || '');
-  useEffect(() => { setQty(1); setVariantId(product.variants?.[0]?.id || ''); }, [product.id, product.variants]);
+  const [variantId, setVariantId] = useState('');
+  useEffect(() => { setQty(1); setVariantId(''); }, [product.id, product.variants]);
   const selectedVariant = product.variants?.find(v => v.id === variantId);
-  const currentStock = selectedVariant?.stock_quantity ?? product.stock_quantity;
+  const currentStock = selectedVariant?.stock_quantity ?? (product.variants?.length ? 0 : product.stock_quantity);
   const currentPrice = selectedVariant?.price_paise ?? product.price_paise;
   const stock = stockInfo(currentStock); const max = Math.max(currentStock, 1);
   const specs = product.specifications ? Object.entries(product.specifications) : [];
@@ -561,10 +597,10 @@ function ProductDetail({ product, categories, related, recent, busy, saved, onSa
         <p className="text-xs text-text-muted">{categoryLabel(categories, product.category_id)}</p>
         <h1 className="mt-1.5 text-3xl font-black leading-tight sm:text-4xl">{product.name}</h1>
         {(product.brand || product.sku) && <p className="mt-2 text-sm text-text-muted">{product.brand}{product.brand && product.sku ? ' Â· ' : ''}{product.sku && `SKU ${product.sku}`}</p>}
-        {product.variants?.length ? <label className="mt-5 block text-xs font-semibold text-white/60">Choose an option<select value={variantId} onChange={e => {setVariantId(e.target.value);setQty(1)}} className="fortis-input mt-1"><option value="">Select option</option>{product.variants.map(v=><option key={v.id} value={v.id}>{v.name} · {v.stock_quantity} available</option>)}</select></label> : null}
-        <p className="mt-5 text-3xl font-bold">{inr(currentPrice)}</p>
+        {product.variants?.length ? <label className="mt-5 block text-xs font-semibold text-white/60">Choose an option<select value={variantId} onChange={e => {setVariantId(e.target.value);setQty(1)}} className="fortis-input mt-1"><option value="">Select option</option>{product.variants.map(v=><option key={v.id} value={v.id} disabled={!v.stock_quantity}>{v.name} · {v.stock_quantity ? `${v.stock_quantity} available` : 'Unavailable'}</option>)}</select></label> : null}
+        <p className="mt-5 text-3xl font-bold">{product.variants?.length && !selectedVariant ? `From ${inr(product.price_paise)}` : inr(currentPrice)}</p>
         <p className="mt-1 text-[11px] text-text-muted">Shipping and taxes are not configured yet.</p>
-        {currentStock > 0 && <div className="mt-3 flex items-center gap-2 text-sm"><span className={`h-2 w-2 rounded-full ${stock.dot}`} /><span className={stock.text}>{stock.label}</span>{selectedVariant && <span className="text-xs text-white/45">{Object.entries(selectedVariant.attributes || {}).map(([k,v])=>`${k}: ${v}`).join(' · ')}</span>}</div>}
+        {product.variants?.length && !selectedVariant ? <p className="mt-3 text-sm text-text-muted">Select an option to see availability.</p> : currentStock > 0 ? <div className="mt-3 flex items-center gap-2 text-sm"><span className={`h-2 w-2 rounded-full ${stock.dot}`} /><span className={stock.text}>{stock.label}</span>{selectedVariant && <span className="text-xs text-white/45">{Object.entries(selectedVariant.attributes || {}).map(([k,v])=>`${k}: ${v}`).join(' · ')}</span>}</div> : null}
 
         <div className="mt-6 flex items-center gap-3">
           <div className="flex items-center rounded-xl border border-white/10">
@@ -623,7 +659,7 @@ function Checkout({ cart, setError, setPreview, preview, navigate, authenticated
   const [address, setAddress] = useState<Record<string, string>>({ name: defaultName, phone: '', line1: '', line2: '', city: '', state: '', postal_code: '' });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [showItems, setShowItems] = useState(false);
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey] = useState(createIdempotencyKey);
   useEffect(() => { if (authenticated) storeApi.preview().then(setPreview).catch(e => setError(e.response?.data?.detail || 'Could not calculate checkout total.')); }, [authenticated]);
   const change = (e: ChangeEvent<HTMLInputElement>) => setAddress({ ...address, [e.target.name]: e.target.value });
   const errors = Object.fromEntries(FIELDS.map(f => [f.key, validate(f.key, address[f.key])]));
@@ -702,7 +738,7 @@ export function StoreAdmin({ categories, user, setError, setNotice }: { categori
   }, [user?.is_admin, productSearch, productStatus, productStock, productCategory, productPage, setError]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
-  if (!user?.is_admin) return <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 text-center"><CircleAlert className="mx-auto text-red-300" /><h1 className="mt-3 text-xl font-bold">Administrator access required</h1><p className="mt-2 text-sm text-text-muted">Sign in with your store administrator account to manage the catalog.</p><Link to="/admin/login" className="fortis-btn-primary mt-5 inline-flex">Admin sign in</Link></div>;
+  if (!user?.is_admin) return <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 text-center"><CircleAlert className="mx-auto text-red-300" /><h1 className="mt-3 text-xl font-bold">Administrator access required</h1><p className="mt-2 text-sm text-text-muted">Sign in with your store administrator account to manage the catalog.</p><Link to="/auth/login" className="fortis-btn-primary mt-5 inline-flex">Sign in</Link></div>;
 
   const resetProduct = () => { setProduct(emptyProduct); setEditingId(''); if (location.pathname !== '/admin/products') navigate('/admin/products', { replace: true }); };
   const createCategory = async (e: FormEvent) => {
@@ -761,7 +797,7 @@ export function StoreAdmin({ categories, user, setError, setNotice }: { categori
   };
 
   return <section className="mx-auto max-w-5xl">
-    <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest text-brand-light">Store administration</p><h1 className="mt-1 text-2xl font-black">Catalog management</h1><p className="mt-2 text-sm text-text-muted">Add complete product details, upload an image, edit listings, or remove them from the store.</p></div><Link to="/store" className="fortis-btn-secondary">View store</Link></div>
+    <div className="flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-4"><BrandLogo className="h-14 w-14 shrink-0 sm:h-16 sm:w-16"/><div><p className="text-xs font-semibold uppercase tracking-widest text-brand-light">Store administration</p><h1 className="mt-1 text-2xl font-black">Catalog management</h1><p className="mt-2 text-sm text-text-muted">Add complete product details, upload an image, edit listings, or remove them from the store.</p></div></div><Link to="/store" className="fortis-btn-secondary">View store</Link></div>
     <div className="mt-7 grid gap-6 lg:grid-cols-[.72fr_1.28fr]">
       <form onSubmit={createCategory} className="h-fit rounded-2xl border border-white/[.08] p-5"><h2 className="font-bold">Add category</h2><label className="fortis-label mt-4">Category name<input required minLength={2} value={categoryName} onChange={e => setCategoryName(e.target.value)} className="fortis-input mt-1" /></label><button disabled={saving} className="fortis-btn-secondary mt-3 w-full">Save category</button><div className="mt-5 space-y-2">{categoryOptions.map(c => <div key={c.id} className="flex justify-between rounded-lg bg-white/[.03] px-3 py-2 text-xs"><span>{c.name}</span><span className="text-text-muted">{c.product_count} items</span></div>)}</div></form>
       <form id="store-product-form" onSubmit={saveProduct} className="scroll-mt-5 rounded-2xl border border-white/[.08] p-5"><div className="flex items-center justify-between gap-2"><h2 className="font-bold">{editingId ? 'Edit product' : 'Add product'}</h2>{editingId && <button type="button" onClick={resetProduct} className="text-xs text-text-muted hover:text-white">Cancel edit</button>}</div>

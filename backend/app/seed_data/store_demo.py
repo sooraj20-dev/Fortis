@@ -32,7 +32,7 @@ def seed_demo_store(db):
         "brand": "",
         "category_id": category,
         "description": description,
-        "image": f"/store-assets/{slug.removesuffix('-demo')}.webp",
+        "image": f"/store-assets/{category}/{slug.removesuffix('-demo')}.webp",
         "price_paise": 0,
         "currency": "INR",
         "stock_quantity": 0,

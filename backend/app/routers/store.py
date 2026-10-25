@@ -161,18 +161,34 @@ def categories(db=Depends(get_mongo_db)):
 
 
 @router.get("/products")
-def products(search: str = "", category: str = "", brand: str = "", available: bool = False,
+def products(search: str = "", category: str = "", brand: str = "", featured: Optional[bool] = None, available: bool = False,
              sort: str = "recommended", page: int = Query(1, ge=1), limit: int = Query(12, ge=1, le=48), db=Depends(get_mongo_db)):
     query = {"active": True}
     if category:
         query["category_id"] = category
     if brand:
         query["brand"] = {"$regex": f"^{re.escape(brand)}$", "$options": "i"}
+    if featured is not None:
+        query["featured"] = featured
     if available:
         query["stock_quantity"] = {"$gt": 0}
     if search.strip():
         terms = re.escape(search.strip())
-        query["$or"] = [{key: {"$regex": terms, "$options": "i"}} for key in ("name", "description", "brand", "category_id", "tags")]
+        query["$or"] = [{key: {"$regex": terms, "$options": "i"}} for key in (
+            "name", "description", "brand", "category_id", "sku", "tags",
+            "specifications.Material", "specifications.Size", "specifications.Color",
+            "specifications.Type", "variants.name", "variants.attributes.size",
+            "variants.attributes.color",
+        )]
+        query["$or"].append({"$expr": {"$regexMatch": {
+            "input": {"$reduce": {
+                "input": {"$objectToArray": {"$ifNull": ["$specifications", {}]}},
+                "initialValue": "",
+                "in": {"$concat": ["$$value", " ", {"$convert": {"input": "$$this.v", "to": "string", "onError": "", "onNull": ""}}]},
+            }},
+            "regex": terms,
+            "options": "i",
+        }}})
     sorting = {"price_asc": [("price_paise", 1)], "price_desc": [("price_paise", -1)],
                "newest": [("created_at", -1)], "name": [("name", 1)],
                "recommended": [("featured", -1), ("created_at", -1)]}.get(sort, [("featured", -1), ("created_at", -1)])

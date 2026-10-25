@@ -4,7 +4,7 @@ import logging
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from jose import jwt
 
@@ -20,7 +20,6 @@ from app.security import (
     DUMMY_PASSWORD_HASH,
     auth_rate_limiter,
     get_client_ip,
-    is_account_locked,
 )
 from app.email_verification import is_email_delivery_configured, send_verification_email, EmailDeliveryError
 
@@ -55,15 +54,27 @@ def _is_onboarding_complete(user: User, db: Session) -> bool:
 
 
 VERIFICATION_SENT_MESSAGE = "If this account requires verification, a link has been sent. Check your inbox or request another link."
+REGISTRATION_VERIFICATION_MESSAGE = "If this address can be registered, a verification link will be sent. If you already have an account, sign in."
+REGISTRATION_NO_VERIFICATION_MESSAGE = "If registration was successful, you can sign in now. If you already have an account, sign in."
+INVALID_LOGIN_MESSAGE = "Invalid email or password."
 
 
 def _verification_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(data: UserCreate, request: Request, db: Session = Depends(get_db)):
-    """Create an account and sign in immediately; email verification is best effort."""
+def _deliver_verification_in_background(email: str, name: str, token: str) -> None:
+    try:
+        send_verification_email(email, name, token)
+    except EmailDeliveryError:
+        logger.warning("Registration verification email delivery failed")
+    except Exception:
+        logger.exception("Unexpected registration verification email failure")
+
+
+@router.post("/register", response_model=RegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register(data: UserCreate, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Create an account without issuing a session before any required email verification."""
     client_ip = get_client_ip(request)
     if settings.AUTH_RATE_LIMIT_ENABLED and client_ip != "testclient":
         allowed, retry_after = auth_rate_limiter.is_allowed(
@@ -80,18 +91,22 @@ def register(data: UserCreate, request: Request, db: Session = Depends(get_db)):
 
     try:
         clean_email = data.email.strip().lower()
+        delivery_configured = is_email_delivery_configured()
+        hashed_password = pwd_context.hash(data.password)
         existing_user = db.query(User).filter(User.email == clean_email).first()
         if existing_user:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="An account with this email already exists. Please sign in.")
+            return RegistrationResponse(
+                message=REGISTRATION_VERIFICATION_MESSAGE if delivery_configured else REGISTRATION_NO_VERIFICATION_MESSAGE,
+                email=clean_email,
+                verification_required=delivery_configured,
+            )
 
         now = datetime.now(timezone.utc)
-        delivery_configured = is_email_delivery_configured()
         verification_token = secrets.token_urlsafe(32) if delivery_configured else None
         user = User(
             email=clean_email,
             name=data.name.strip(),
-            hashed_password=pwd_context.hash(data.password),
+            hashed_password=hashed_password,
             is_active=True,
             is_admin=False,
             onboarding_completed=False,
@@ -109,29 +124,14 @@ def register(data: UserCreate, request: Request, db: Session = Depends(get_db)):
         db.refresh(user)
 
         # Persist before delivery so a fast click cannot race the database commit.
-        # Delivery is best effort: users still receive their session immediately.
         if verification_token:
-            try:
-                send_verification_email(clean_email, user.name, verification_token)
-            except EmailDeliveryError:
-                logger.warning("Registration verification email delivery failed")
-                user.email_verified = None
-                user.email_verification_token_hash = None
-                user.email_verification_expires_at = None
-                db.commit()
+            background_tasks.add_task(_deliver_verification_in_background, clean_email, user.name, verification_token)
 
         logger.info("New account created (id=%s)", user.id)
-        is_complete = _is_onboarding_complete(user, db)
-        profile = db.query(Profile).filter(Profile.user_id == user.id).first()
-        return TokenResponse(
-            access_token=create_access_token(user.id),
-            user_id=user.id,
-            name=user.name,
-            email=user.email,
-            is_admin=user.is_admin,
-            onboarding_complete=is_complete,
-            avatar_url=getattr(profile, "avatar_url", None) if profile else None,
-            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        return RegistrationResponse(
+            message=REGISTRATION_VERIFICATION_MESSAGE if delivery_configured else REGISTRATION_NO_VERIFICATION_MESSAGE,
+            email=clean_email,
+            verification_required=delivery_configured,
         )
     except HTTPException:
         raise
@@ -199,9 +199,10 @@ def resend_verification(data: ResendVerificationRequest, request: Request, db: S
 
 @router.post("/login", response_model=TokenResponse)
 def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    """Authenticate with email + password with brute-force defense and constant-time verification."""
+    """Authenticate with email + password using IP and per-IP/email throttles."""
     client_ip = get_client_ip(request)
     clean_email = data.email.strip().lower()
+    email_key = hashlib.sha256(clean_email.encode("utf-8")).hexdigest()
 
     # IP-level rate limiting
     if settings.AUTH_RATE_LIMIT_ENABLED and client_ip != "testclient":
@@ -217,57 +218,42 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
                 headers={"Retry-After": str(retry_after)},
             )
 
+        pair_allowed, pair_retry_after = auth_rate_limiter.is_allowed(
+            f"login_pair:{client_ip}:{email_key}",
+            max_attempts=settings.AUTH_MAX_FAILED_LOGIN_ATTEMPTS,
+            window_seconds=60,
+        )
+        if not pair_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Please wait before trying again.",
+                headers={"Retry-After": str(pair_retry_after)},
+            )
+
     try:
         user = db.query(User).filter(User.email == clean_email).first()
-
-        # Check account lockout before password verification
-        if user:
-            is_locked, remaining_sec = is_account_locked(getattr(user, "locked_until", None))
-            if is_locked:
-                remaining_min = max(1, (remaining_sec + 59) // 60)
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Account is temporarily locked due to multiple failed login attempts. Please try again in {remaining_min} minute{'s' if remaining_min > 1 else ''}.",
-                    headers={"Retry-After": str(remaining_sec)},
-                )
 
         # Timing-safe password verification
         if not user:
             # Constant-time dummy verification to defeat user enumeration via timing
             pwd_context.verify(data.password, DUMMY_PASSWORD_HASH)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_LOGIN_MESSAGE)
 
         if not pwd_context.verify(data.password, user.hashed_password):
-            # Handle failed password attempt
-            current_failed = (getattr(user, "failed_login_attempts", 0) or 0) + 1
-            user.failed_login_attempts = current_failed
-
-            if current_failed >= settings.AUTH_MAX_FAILED_LOGIN_ATTEMPTS:
-                user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=settings.AUTH_LOCKOUT_MINUTES)
-                db.commit()
-                logger.warning("Account %s locked out after %d failed attempts", clean_email, current_failed)
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Account has been temporarily locked for {settings.AUTH_LOCKOUT_MINUTES} minutes due to multiple failed login attempts.",
-                    headers={"Retry-After": str(settings.AUTH_LOCKOUT_MINUTES * 60)},
-                )
-
-            db.commit()
-            remaining_attempts = max(0, settings.AUTH_MAX_FAILED_LOGIN_ATTEMPTS - current_failed)
-            logger.info("Failed login attempt for %s (%d attempts, %d remaining before lockout)", clean_email, current_failed, remaining_attempts)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+            logger.info("Failed login attempt")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_LOGIN_MESSAGE)
 
         if not user.is_active:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_LOGIN_MESSAGE)
         if getattr(user, "email_verified", None) is False:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                                detail="Verify your email address before signing in. You can request a new verification link.")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_LOGIN_MESSAGE)
 
         # Login successful: reset failed attempts and lockout
         user.failed_login_attempts = 0
         user.locked_until = None
         user.last_login_at = datetime.now(timezone.utc)
         db.commit()
+        auth_rate_limiter.reset(f"login_pair:{client_ip}:{email_key}")
 
         is_complete = _is_onboarding_complete(user, db)
         profile = db.query(Profile).filter(Profile.user_id == user.id).first()

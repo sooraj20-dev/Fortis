@@ -1,5 +1,4 @@
 """Gemini API provider for the context-aware Fortis Coach."""
-import asyncio
 import json
 import logging
 import re
@@ -10,7 +9,6 @@ from app.ai.provider import AIProvider, AIProviderError, AIResponse
 from app.config import settings, get_gemini_api_key
 
 logger = logging.getLogger(__name__)
-FALLBACK_RESPONSE = "Coach unavailable, using fallback."
 
 class GeminiProvider(AIProvider):
     async def complete(
@@ -57,14 +55,13 @@ class GeminiProvider(AIProvider):
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=45_000))
+        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=20_000))
         
-        # Build list of candidate models with fallbacks for high demand / outages
+        # Keep one fast fallback for a missing or unavailable configured model.
         candidate_models = [settings.GEMINI_MODEL]
-        if settings.GEMINI_MODEL != "test-model":
-            for fallback in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-flash-latest"]:
-                if fallback not in candidate_models:
-                    candidate_models.append(fallback)
+        fallback = "gemini-flash-lite-latest"
+        if settings.GEMINI_MODEL != "test-model" and fallback not in candidate_models:
+            candidate_models.append(fallback)
 
         last_error = None
         final_response = None
@@ -74,14 +71,14 @@ class GeminiProvider(AIProvider):
         started_at = datetime.utcnow()
 
         for model_name in candidate_models:
-            for attempt in range(2):
+            for attempt in range(1):
                 try:
                     response = await client.aio.models.generate_content(
                         model=model_name,
                         contents=contents,
                         config=types.GenerateContentConfig(
                             system_instruction="\n\n".join(system_parts) if system_parts else None,
-                            max_output_tokens=min(max_tokens, 256),
+                            max_output_tokens=min(max_tokens, 192),
                             response_mime_type="application/json",
                             thinking_config=types.ThinkingConfig(thinking_level="low"),
                         ),
@@ -155,14 +152,17 @@ class GeminiProvider(AIProvider):
                     # Do not retry on client errors
                     if status in (400, 401, 403):
                         break
+                    # A project quota is shared across model fallbacks; retries only waste
+                    # requests and make the coach appear to answer with unrelated content.
+                    if status == 429:
+                        break
                     # If model is unavailable (503) or not found (404), move to next candidate model
                     if status in (503, 404):
                         break
-                    if (isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or status in (408, 429, 500, 502, 504)) and attempt == 0:
-                        await asyncio.sleep(0.5)
-                        continue
                     break
             if getattr(last_error, "code", None) in (400, 401, 403):
+                break
+            if getattr(last_error, "code", None) == 429:
                 break
 
         # Return the required fallback after all candidate models and retries are exhausted.
@@ -174,7 +174,7 @@ class GeminiProvider(AIProvider):
             detail = "Gemini rejected the API key or the key does not have model access."
             track_status = "failed"
         elif status_code == 429:
-            detail = "Gemini rate limit or quota reached. Please retry in a few moments."
+            detail = "The AI Coach has reached its current request limit. Please try again in a few minutes; daily quota limits may take longer to reset."
             track_status = "rate_limited"
         elif status_code == 503:
             detail = "Gemini service is temporarily experiencing high demand across models. Please try again in a few moments."
@@ -193,7 +193,9 @@ class GeminiProvider(AIProvider):
             exc=last_error,
             http_status_code=status_code,
         )
-        return AIResponse(content=FALLBACK_RESPONSE, finish_reason="error")
+        if status_code == 429:
+            raise AIProviderError(detail) from last_error
+        raise AIProviderError(detail) from last_error
 
 
 def _fire_record(

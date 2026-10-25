@@ -18,8 +18,10 @@ class OpenAIProvider(AIProvider):
         self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict]] = None,
-        max_tokens: int = 1024
+        max_tokens: int = 1024,
+        user_id: Optional[int] = None,
     ) -> AIResponse:
+        del user_id  # The OpenAI provider does not currently attach user metadata.
         try:
             kwargs = {
                 "model": self.model,
@@ -39,4 +41,8 @@ class OpenAIProvider(AIProvider):
             )
         except Exception as e:
             logger.exception("OpenAI API request failed")
+            if getattr(e, "status_code", None) == 429:
+                raise AIProviderError(
+                    "The AI Coach has reached its current request limit. Please try again in a few minutes; daily quota limits may take longer to reset."
+                ) from e
             raise AIProviderError("OpenAI request failed. Check the configured API key, model access, and network.") from e

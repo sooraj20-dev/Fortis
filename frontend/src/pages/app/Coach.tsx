@@ -112,9 +112,9 @@ const AssistantBubble: React.FC<{ text: string; animate: boolean; onTick: () => 
   useEffect(() => {
     if (done) return;
     const id = setInterval(() => {
-      setShown((n) => Math.min(text.length, n + 4));
+      setShown((n) => Math.min(text.length, n + 10));
       onTick();
-    }, 20);
+    }, 12);
     return () => clearInterval(id);
   }, [done, text.length, onTick]);
 
@@ -257,9 +257,12 @@ export const CoachPage: React.FC = () => {
         { uid: nextUid(), role: 'assistant', content: res.data.candidates?.[0]?.output ?? 'Coach unavailable, using fallback.', animate: true },
       ]);
     } catch (err: any) {
-      const errMsg =
-        err?.response?.data?.detail ||
-        'Fortis Coach is temporarily unavailable. Please check your backend connection.';
+      const status = err?.response?.status;
+      const errMsg = status === 429
+        ? (err?.response?.data?.detail || 'The AI Coach has reached its current request limit. Please try again later.')
+        : status === 503
+          ? (err?.response?.data?.detail || 'The AI Coach is temporarily unavailable. Your question is saved; please try again shortly.')
+          : (err?.response?.data?.detail || 'Fortis Coach is temporarily unavailable. Please check your connection and try again.');
       setMessages((prev) => [...prev, { uid: nextUid(), role: 'assistant', content: `⚠️ ${errMsg}` }]);
     } finally {
       setLoading(false);

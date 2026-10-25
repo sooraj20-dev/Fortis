@@ -47,7 +47,9 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       useAuthStore.getState().logout();
-      window.location.href = window.location.pathname.startsWith('/admin') ? '/admin/login' : '/auth/login';
+      window.location.href = window.location.pathname.startsWith('/admin')
+        ? `/auth/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+        : '/auth/login';
     }
     return Promise.reject(error);
   }

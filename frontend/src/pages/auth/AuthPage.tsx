@@ -38,6 +38,7 @@ const AuthPage: React.FC = () => {
   // Which fields have errors (for red border)
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [registrationPending, setRegistrationPending] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState(false);
   const [verificationState, setVerificationState] = useState<VerificationState>(null);
   const [verificationMessage, setVerificationMessage] = useState('');
   const [resendingVerification, setResendingVerification] = useState(false);
@@ -47,13 +48,20 @@ const AuthPage: React.FC = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentUser = useAuthStore((s) => s.user);
   const onboardingComplete = useAuthStore((s) => s.onboardingComplete);
+  const postLoginPath = (isAdmin: boolean) => {
+    const next = searchParams.get('next');
+    if (next === '/store' || next?.startsWith('/store/')) return next;
+    return isAdmin && next?.startsWith('/admin/') && next !== '/admin/login'
+      ? next
+      : isAdmin ? '/admin/dashboard' : '/dashboard';
+  };
 
   // If already logged in, redirect directly to dashboard
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(currentUser?.is_admin ? '/admin/dashboard' : '/dashboard', { replace: true });
+      navigate(postLoginPath(!!currentUser?.is_admin), { replace: true });
     }
-  }, [isAuthenticated, currentUser?.is_admin, navigate]);
+  }, [isAuthenticated, currentUser?.is_admin, navigate, searchParams]);
 
   const verificationToken = searchParams.get('verify');
   useEffect(() => {
@@ -64,7 +72,7 @@ const AuthPage: React.FC = () => {
       .then((res) => {
         if (!active) return;
         setVerificationState('verified'); setVerificationMessage(res.data.message); setEmail(res.data.email || '');
-        setRegistrationPending(true); setTab('login');
+        setRegistrationPending(true); setVerificationRequired(false); setTab('login');
         sessionStorage.setItem('fortis_new_registration', 'true');
       })
       .catch((err: any) => {
@@ -102,7 +110,7 @@ const AuthPage: React.FC = () => {
       { id: data.user_id, email: data.email, name: data.name, is_admin: data.is_admin },
       data.onboarding_complete,
     );
-    navigate(data.is_admin ? '/admin/dashboard' : '/dashboard', { replace: true });
+    navigate(postLoginPath(data.is_admin), { replace: true });
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -115,12 +123,11 @@ const AuthPage: React.FC = () => {
       handleSuccess(res.data);
     } catch (err: any) {
       const status = err?.response?.status;
-      const detail = String(err?.response?.data?.detail || '');
-      if (status === 403 && detail.toLowerCase().includes('verify your email')) {
+      if (status === 401 || status === 403) {
         setRegistrationPending(true);
-        showError(detail, ['email']);
-      } else if (status === 401 || status === 403) {
-        showError('Incorrect email or password. Please try again.', ['email', 'password']);
+        setVerificationRequired(true);
+        setVerificationMessage('If this account needs email verification, request a link below.');
+        showError('Invalid email or password. Please try again.', ['email', 'password']);
       } else if (status === 404) {
         showError('No account found with this email. Did you mean to register?', ['email']);
       } else if (status === 422) {
@@ -154,8 +161,13 @@ const AuthPage: React.FC = () => {
 
     setLoading(true);
     try {
-      const res = await api.post<TokenResponse>('/api/auth/register', { name, email, password });
-      handleSuccess(res.data);
+      const res = await api.post<RegistrationResponse>('/api/auth/register', { name, email, password });
+      setEmail(res.data.email);
+      setVerificationRequired(res.data.verification_required);
+      setVerificationMessage(res.data.message);
+      setRegistrationPending(true);
+      setTab('login');
+      setPassword('');
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 409 || status === 400) {
@@ -275,7 +287,7 @@ const AuthPage: React.FC = () => {
             {(registrationPending || verificationState) && (
               <div className={`mb-5 rounded-xl border p-3.5 text-sm ${verificationState === 'failed' ? 'border-danger/40 bg-danger/10 text-danger' : 'border-brand/40 bg-brand/10 text-text-primary'}`} role="status" aria-live="polite">
                 <p>{verificationState === 'checking' ? 'Verifying your email link…' : verificationMessage || 'Check your email for a verification link before signing in.'}</p>
-                {tab === 'login' && (registrationPending || verificationState === 'failed') && verificationState !== 'checking' && (
+                {tab === 'login' && verificationRequired && (registrationPending || verificationState === 'failed') && verificationState !== 'checking' && (
                   <button type="button" onClick={resendVerification} disabled={resendingVerification} className="mt-2 text-brand-light font-semibold underline underline-offset-2 disabled:opacity-60">
                     {resendingVerification ? 'Sending…' : 'Resend verification email'}
                   </button>

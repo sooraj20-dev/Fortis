@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { AppLayout } from './layouts/AppLayout';
 import SplashScreen from './components/SplashScreen';
 import { useAuthStore } from './stores/authStore';
@@ -9,7 +9,6 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 // â”€â”€ Lazy-loaded pages (each becomes its own JS chunk) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const Landing        = lazy(() => import('./pages/Landing'));
 const AuthPage       = lazy(() => import('./pages/auth/AuthPage'));
-const AdminLoginPage = lazy(() => import('./pages/auth/AdminLoginPage'));
 const Onboarding     = lazy(() => import('./pages/Onboarding'));
 const PlanCreating   = lazy(() => import('./pages/PlanCreating'));
 const Dashboard      = lazy(() => import('./pages/app/Dashboard'));
@@ -50,6 +49,16 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/landing" replace />;
 };
 
+const RequireStoreAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const location = useLocation();
+  if (!isAuthenticated) {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`/auth/login?next=${encodeURIComponent(next)}`} replace />;
+  }
+  return <>{children}</>;
+};
+
 const RequireOnboarding: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const authenticated = useAuthStore((s) => s.isAuthenticated);
   const complete = useAuthStore((s) => s.onboardingComplete);
@@ -65,6 +74,12 @@ const RedirectIfAuthed: React.FC<{ children: React.ReactNode }> = ({ children })
   const user = useAuthStore((s) => s.user);
   if (!isAuthenticated) return <>{children}</>;
   return <Navigate to={user?.is_admin ? '/admin/dashboard' : '/dashboard'} replace />;
+};
+
+const AdminLoginRedirect: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get('next');
+  return <Navigate to={`/auth/login${next ? `?next=${encodeURIComponent(next)}` : ''}`} replace />;
 };
 
 function App() {
@@ -114,7 +129,7 @@ function App() {
               </RedirectIfAuthed>
             }
           />
-          <Route path="/admin/login" element={<AdminLoginPage />} />
+          <Route path="/admin/login" element={<AdminLoginRedirect />} />
           <Route path="/admin/access-denied" element={<AdminAccessDenied />} />
           <Route path="/admin" element={<AdminRouteGuard />}>
             <Route element={<AdminShell />}>
@@ -316,7 +331,7 @@ function App() {
           />
 
           <Route path="/store/admin" element={<Navigate to="/admin/products" replace />} />
-          <Route path="/store/*" element={<StorePage />} />
+          <Route path="/store/*" element={<RequireStoreAuth><StorePage /></RequireStoreAuth>} />
 
           <Route
             path="/"

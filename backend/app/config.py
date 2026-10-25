@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -38,6 +39,23 @@ class Settings(BaseSettings):
     AI_DAILY_REQUEST_BUDGET: int = 0
     AI_REQUESTS_PER_MINUTE_BUDGET: int = 0
     AI_TOKENS_PER_MINUTE_BUDGET: int = 0
+
+    @field_validator("JWT_SECRET")
+    @classmethod
+    def validate_jwt_secret(cls, value: str) -> str:
+        secret = value.strip()
+        lowered = secret.lower()
+        if len(secret.encode("utf-8")) < 32 or any(marker in lowered for marker in ("replace_with", "changeme", "your-secret", "change_me")):
+            raise ValueError("JWT_SECRET must be a non-placeholder secret of at least 32 bytes")
+        return secret
+
+    @field_validator("JWT_ALGORITHM")
+    @classmethod
+    def validate_jwt_algorithm(cls, value: str) -> str:
+        algorithm = value.strip().upper()
+        if algorithm not in {"HS256", "HS384", "HS512"}:
+            raise ValueError("JWT_ALGORITHM must be HS256, HS384, or HS512")
+        return algorithm
 
     class Config:
         env_file = Path(__file__).resolve().parents[1] / ".env"
