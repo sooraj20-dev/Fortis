@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 
 
 DEMO_CATEGORIES = [
-    {"name": "Gym Equipment", "slug": "gym-equipment", "description": "Strength and home gym equipment.", "sort_order": 1},
-    {"name": "Fitness Apparel", "slug": "fitness-apparel", "description": "Training clothing and wearables.", "sort_order": 2},
-    {"name": "Accessories", "slug": "accessories", "description": "Useful training essentials.", "sort_order": 3},
-    {"name": "Recovery and Mobility", "slug": "recovery-mobility", "description": "Mobility and recovery tools.", "sort_order": 4},
+    {"name": "Gym Equipment", "slug": "gym-equipment", "description": "Strength and home gym equipment.", "sort_order": 1, "image": "/store-assets/gym-equipment/adjustable-dumbbell-set.webp"},
+    {"name": "Fitness Apparel", "slug": "fitness-apparel", "description": "Training clothing and wearables.", "sort_order": 2, "image": "/store-assets/fitness-apparel/training-t-shirt.webp"},
+    {"name": "Accessories", "slug": "accessories", "description": "Useful training essentials.", "sort_order": 3, "image": "/store-assets/accessories/shaker-bottle.webp"},
+    {"name": "Recovery and Mobility", "slug": "recovery-mobility", "description": "Mobility and recovery tools.", "sort_order": 4, "image": "/store-assets/recovery-mobility/training-mat.webp"},
 ]
 
 DEMO_PRODUCTS = [
@@ -24,7 +24,7 @@ def seed_demo_store(db):
     if db.store_products.count_documents({}) or db.store_categories.count_documents({}):
         return False
     now = datetime.now(timezone.utc)
-    categories = [{**item, "active": True, "image": "", "created_at": now, "updated_at": now} for item in DEMO_CATEGORIES]
+    categories = [{**item, "active": True, "image": item.get("image", ""), "created_at": now, "updated_at": now} for item in DEMO_CATEGORIES]
     db.store_categories.insert_many(categories)
     products = [{
         "name": name,
