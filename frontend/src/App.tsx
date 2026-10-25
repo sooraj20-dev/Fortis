@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 import { AppLayout } from './layouts/AppLayout';
 import SplashScreen from './components/SplashScreen';
 import { useAuthStore } from './stores/authStore';
@@ -47,16 +47,6 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const user = useAuthStore((s) => s.user);
   if (isAuthenticated && user?.is_admin) return <Navigate to="/admin/dashboard" replace />;
   return isAuthenticated ? <>{children}</> : <Navigate to="/landing" replace />;
-};
-
-const RequireStoreAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const location = useLocation();
-  if (!isAuthenticated) {
-    const next = `${location.pathname}${location.search}`;
-    return <Navigate to={`/auth/login?next=${encodeURIComponent(next)}`} replace />;
-  }
-  return <>{children}</>;
 };
 
 const RequireOnboarding: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -331,7 +321,7 @@ function App() {
           />
 
           <Route path="/store/admin" element={<Navigate to="/admin/products" replace />} />
-          <Route path="/store/*" element={<RequireStoreAuth><StorePage /></RequireStoreAuth>} />
+          <Route path="/store/*" element={<StorePage />} />
 
           <Route
             path="/"

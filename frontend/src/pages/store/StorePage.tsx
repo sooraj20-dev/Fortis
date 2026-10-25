@@ -404,7 +404,7 @@ export default function StorePage() {
       </Link>
       <nav className="flex items-center gap-1 sm:gap-2" aria-label="Store">
         <Link to="/store?saved=1" className="relative hidden h-10 items-center gap-1.5 rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex"><Heart size={15} /> Saved{saved.length > 0 && <span className="rounded-full bg-white/10 px-1.5 text-[10px]">{saved.length}</span>}</Link>
-        <Link to="/store/orders" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Orders</Link>
+        {user && <Link to="/store/orders" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Orders</Link>}
         {user?.is_admin && <Link to="/admin/dashboard" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Manage</Link>}
         {!user?.is_admin && <Link to="/auth/login" className="hidden h-10 items-center rounded-lg px-3 text-xs text-text-secondary hover:bg-white/5 hover:text-white md:flex">Admin</Link>}
         <button onClick={() => setDrawer(true)} aria-label={`Open bag, ${count} items`} className="flex h-10 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-semibold transition hover:border-brand/60">

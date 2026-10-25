@@ -13,6 +13,10 @@ import {
   ChevronRight,
   Flame,
   Star,
+  ShoppingBag,
+  Dumbbell as StoreGear,
+  Shirt,
+  Activity,
 } from 'lucide-react';
 
 /* ───────────────────────── Content ───────────────────────── */
@@ -370,6 +374,9 @@ const Landing: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          <Link to="/store" className="fortis-btn-ghost hidden text-sm sm:inline-flex">
+            Store
+          </Link>
           <Link to="/auth/login" className="fortis-btn-ghost text-sm">
             Sign In
           </Link>
@@ -637,6 +644,41 @@ const Landing: React.FC = () => {
               </SpotlightCard>
             );
           })}
+        </div>
+      </section>
+
+      {/* ── FORTIS Store ──────────────────────────────────── */}
+      <section className="px-4 sm:px-6 pb-14 sm:pb-20 max-w-6xl mx-auto w-full">
+        <div className="relative overflow-hidden rounded-3xl border border-brand/20 bg-[radial-gradient(ellipse_at_85%_0%,rgba(255,90,31,.16),transparent_45%),linear-gradient(135deg,#171317,#0e0e12_65%)] p-5 sm:p-9 lg:p-12">
+          <div className="absolute -right-14 -top-20 h-64 w-64 rounded-full border border-brand/10" aria-hidden="true" />
+          <div className="relative grid gap-8 lg:grid-cols-[1fr_.85fr] lg:items-center">
+            <div>
+              <p className="overline mb-3">FORTIS Store</p>
+              <h2 className="max-w-xl text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+                Gear for the work <span className="text-gradient">you put in.</span>
+              </h2>
+              <p className="mt-4 max-w-xl text-sm leading-6 text-text-secondary sm:text-base">
+                Find strength equipment, training apparel, and recovery essentials in one place. Check each product’s details and current stock, then place an order through your Fortis account.
+              </p>
+              <Link to="/store" className="fortis-btn-primary mt-6 inline-flex items-center gap-2 px-5 py-3 text-sm">
+                <ShoppingBag className="h-4 w-4" /> Explore the store <ArrowRight className="h-4 w-4" />
+              </Link>
+              <p className="mt-3 text-xs text-text-muted">Sign in is required to submit an order. Payment and shipping options are not configured yet.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+              {[
+                { icon: StoreGear, title: 'Strength equipment', detail: 'Build your home training setup.' },
+                { icon: Shirt, title: 'Training apparel', detail: 'Comfort for every session.' },
+                { icon: Activity, title: 'Recovery essentials', detail: 'Support mobility and rest days.' },
+              ].map(({ icon: Icon, title, detail }) => (
+                <Link key={title} to="/store" className="group flex items-center gap-3 rounded-2xl border border-white/[.08] bg-black/20 p-4 transition hover:border-brand/40 hover:bg-white/[.04]">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-brand/20 bg-brand/10 text-brand-light"><Icon className="h-5 w-5" /></span>
+                  <span><b className="block text-sm text-white">{title}</b><small className="mt-0.5 block text-xs text-text-muted">{detail}</small></span>
+                  <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-text-muted transition group-hover:translate-x-1 group-hover:text-brand-light" />
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
