@@ -239,6 +239,16 @@ export const VisionPage: React.FC = () => {
       {/* ───────────────────── FOOD ───────────────────── */}
       {tab === 'food' && (
         <div className="space-y-5 animate-fade-in">
+          {/* Privacy Transparency Disclosure */}
+          <div className="p-3 bg-dark-card/60 border border-brand/20 rounded-xl text-xs text-text-secondary flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-brand-light shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <span className="font-semibold text-text-primary">AI Privacy Disclosure: </span>
+              Uploaded food photos are transmitted securely to Google Gemini for visual recognition and portion estimation.
+              Images are processed in memory and never stored in usage logs.
+            </div>
+          </div>
+
           <input ref={foodInput} type="file" accept="image/*" capture="environment" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) analyseFood(f); }} />
 
@@ -403,6 +413,16 @@ export const VisionPage: React.FC = () => {
       {/* ───────────────────── FORM ───────────────────── */}
       {tab === 'form' && (
         <div className="space-y-5 animate-fade-in">
+          {/* Privacy Transparency Disclosure */}
+          <div className="p-3 bg-dark-card/60 border border-brand/20 rounded-xl text-xs text-text-secondary flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-brand-light shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <span className="font-semibold text-text-primary">AI Privacy Disclosure: </span>
+              Sampled video frames from your recording are sent to Google Gemini for biomechanical assessment.
+              Raw video is processed temporarily and discarded; no biometric facial recognition is performed.
+            </div>
+          </div>
+
           <input ref={videoInput} type="file" accept="video/*" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) analyseVideo(f); }} />
 

@@ -328,37 +328,41 @@ class UsageTracker:
 
     def _build_quota_comparison(self, today_requests: int, today_tokens: int) -> Dict[str, Any]:
         """
-        Compare actual current usage today against total limit to determine remaining balance.
-        Supports both custom user-configured budgets and standard Google Gemini tier reference quotas.
+        Compare actual current usage today against configured warning thresholds.
+        Does not fabricate official Google Gemini quota limits or reset countdowns.
+        Explicitly distinguishes application-configured warning budgets from official Google quota limits.
         """
         daily_req_budget = getattr(settings, "AI_DAILY_REQUEST_BUDGET", 0)
+        daily_token_budget = getattr(settings, "AI_DAILY_TOKEN_BUDGET", 0)
         model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        is_warning_budget = bool(daily_req_budget and daily_req_budget > 0)
 
-        if daily_req_budget and daily_req_budget > 0:
+        if is_warning_budget:
             request_limit = daily_req_budget
             limit_type = "custom_budget"
-            limit_label = "Configured Daily Budget"
+            limit_label = "Application Warning Budget"
+            limit_description = "Internal application warning threshold (does not reflect official Google Cloud quota limits)"
+            req_remaining = max(0, request_limit - today_requests)
+            req_pct_used = round(min(100.0, (today_requests / request_limit * 100)), 1) if request_limit > 0 else 0.0
         else:
-            request_limit = 1500  # Google Gemini Flash Free Tier standard limit: 1500 RPD
-            limit_type = "gemini_standard_tier"
-            limit_label = "Gemini Free Tier Standard Limit"
+            request_limit = None
+            limit_type = "official_quota_unavailable"
+            limit_label = "Official Gemini Quota Unavailable"
+            limit_description = "Google Gemini does not expose real-time project quota telemetry via the client SDK. Check Google AI Studio for official limits."
+            req_remaining = None
+            req_pct_used = None
 
-        token_limit = 1_000_000  # 1M tokens/day reference capacity
-        req_remaining = max(0, request_limit - today_requests)
-        req_pct_used = round(min(100.0, (today_requests / request_limit * 100)), 1) if request_limit > 0 else 0.0
+        if daily_token_budget and daily_token_budget > 0:
+            token_limit = daily_token_budget
+            tok_remaining = max(0, token_limit - today_tokens)
+            tok_pct_used = round(min(100.0, (today_tokens / token_limit * 100)), 1)
+        else:
+            token_limit = None
+            tok_remaining = None
+            tok_pct_used = None
 
-        tok_remaining = max(0, token_limit - today_tokens)
-        tok_pct_used = round(min(100.0, (today_tokens / token_limit * 100)), 1) if token_limit > 0 else 0.0
-
-        now = datetime.utcnow()
-        midnight_utc = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        delta_seconds = max(0, int((midnight_utc - now).total_seconds()))
-        hours = delta_seconds // 3600
-        minutes = (delta_seconds % 3600) // 60
-        resets_in = f"{hours}h {minutes}m"
-
-        rpm_limit = getattr(settings, "AI_REQUESTS_PER_MINUTE_BUDGET", 0) or 15
-        tpm_limit = getattr(settings, "AI_TOKENS_PER_MINUTE_BUDGET", 0) or 1_000_000
+        rpm_limit = getattr(settings, "AI_REQUESTS_PER_MINUTE_BUDGET", None) or None
+        tpm_limit = getattr(settings, "AI_TOKENS_PER_MINUTE_BUDGET", None) or None
 
         return {
             "model": model,
@@ -374,8 +378,15 @@ class UsageTracker:
             "tpm_limit": tpm_limit,
             "limit_type": limit_type,
             "limit_label": limit_label,
-            "resets_at": midnight_utc.isoformat(),
-            "resets_in": resets_in,
+            "limit_description": limit_description,
+            "is_warning_budget": is_warning_budget,
+            "configured_warning_budget": daily_req_budget if is_warning_budget else None,
+            "official_daily_request_limit": None,
+            "official_quota_available": False,
+            "official_quota_label": "Official Gemini quota unavailable",
+            "official_quota_url": "https://ai.google.dev/gemini-api/docs/rate-limits",
+            "resets_at": None,
+            "resets_in": None,
         }
 
     def _compute_warning_state(
@@ -415,13 +426,18 @@ class UsageTracker:
         return "normal"
 
     def _unavailable_summary(self, period_start: datetime, period_end: datetime) -> Dict[str, Any]:
+        """
+        Return a clearly-marked unavailable response.
+        ALL numeric usage fields are None — never 0 — to prevent callers from treating
+        a tracking failure as 'zero usage' or 'full quota remaining'.
+        """
         return {
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
-            "total_attempts": 0,
-            "successful": 0,
-            "failed": 0,
-            "rate_limited": 0,
+            "total_attempts": None,
+            "successful": None,
+            "failed": None,
+            "rate_limited": None,
             "input_tokens_total": None,
             "output_tokens_total": None,
             "total_tokens": None,
@@ -435,24 +451,39 @@ class UsageTracker:
                 "daily_request_budget": None,
                 "warning_percent": 80.0,
             },
-            "quota_comparison": {
-                "model": getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite"),
-                "daily_request_limit": 1500,
-                "daily_requests_used": 0,
-                "daily_requests_remaining": 1500,
-                "daily_requests_percent_used": 0.0,
-                "daily_token_limit": 1_000_000,
-                "daily_tokens_used": 0,
-                "daily_tokens_remaining": 1_000_000,
-                "daily_tokens_percent_used": 0.0,
-                "rpm_limit": 15,
-                "tpm_limit": 1_000_000,
-                "limit_type": "gemini_standard_tier",
-                "limit_label": "Gemini Free Tier Standard Limit",
-                "resets_at": "",
-                "resets_in": "—",
-            },
+            "quota_comparison": self._unavailable_quota_comparison(),
             "last_updated": datetime.utcnow().isoformat(),
+        }
+
+    def _unavailable_quota_comparison(self) -> Dict[str, Any]:
+        """
+        Return a quota comparison that explicitly signals tracking is unavailable.
+        All usage-derived numeric fields are None to prevent false 'full quota remaining'
+        display when tracking data cannot be read.
+        """
+        daily_req_budget = getattr(settings, "AI_DAILY_REQUEST_BUDGET", 0)
+        is_warning_budget = bool(daily_req_budget and daily_req_budget > 0)
+        return {
+            "model": getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite"),
+            "daily_request_limit": None,
+            "daily_requests_used": None,
+            "daily_requests_remaining": None,
+            "daily_requests_percent_used": None,
+            "daily_token_limit": None,
+            "daily_tokens_used": None,
+            "daily_tokens_remaining": None,
+            "daily_tokens_percent_used": None,
+            "rpm_limit": None,
+            "tpm_limit": None,
+            "limit_type": "tracking_unavailable",
+            "limit_label": "Usage tracking unavailable",
+            "limit_description": "Tracking service is unavailable. Usage data cannot be verified.",
+            "is_warning_budget": is_warning_budget,
+            "configured_warning_budget": daily_req_budget if is_warning_budget else None,
+            "official_daily_request_limit": None,
+            "resets_at": "",
+            "resets_in": "—",
+            "tracking_unavailable": True,
         }
 
     # ------------------------------------------------------------------
@@ -548,13 +579,13 @@ class UsageTracker:
         except Exception as e:
             logger.warning("UsageTracker.get_status failed: %s", type(e).__name__)
             return {
-                "today_total": 0,
-                "today_successful": 0,
-                "today_failed": 0,
-                "today_rate_limited": 0,
+                "today_total": None,
+                "today_successful": None,
+                "today_failed": None,
+                "today_rate_limited": None,
                 "feature_today": {
-                    "ai_coach": {"total": 0, "successful": 0, "failed": 0, "rate_limited": 0, "input_tokens": None, "output_tokens": None},
-                    "fortis_vision": {"total": 0, "successful": 0, "failed": 0, "rate_limited": 0, "input_tokens": None, "output_tokens": None},
+                    "ai_coach": {"total": None, "successful": None, "failed": None, "rate_limited": None, "input_tokens": None, "output_tokens": None},
+                    "fortis_vision": {"total": None, "successful": None, "failed": None, "rate_limited": None, "input_tokens": None, "output_tokens": None},
                 },
                 "input_tokens_today": None,
                 "output_tokens_today": None,
@@ -564,23 +595,7 @@ class UsageTracker:
                 "last_updated": datetime.utcnow().isoformat(),
                 "tracking_available": False,
                 "tracking_status": "unavailable",
-                "quota_comparison": {
-                    "model": getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite"),
-                    "daily_request_limit": 1500,
-                    "daily_requests_used": 0,
-                    "daily_requests_remaining": 1500,
-                    "daily_requests_percent_used": 0.0,
-                    "daily_token_limit": 1_000_000,
-                    "daily_tokens_used": 0,
-                    "daily_tokens_remaining": 1_000_000,
-                    "daily_tokens_percent_used": 0.0,
-                    "rpm_limit": 15,
-                    "tpm_limit": 1_000_000,
-                    "limit_type": "gemini_standard_tier",
-                    "limit_label": "Gemini Free Tier Standard Limit",
-                    "resets_at": "",
-                    "resets_in": "—",
-                },
+                "quota_comparison": self._unavailable_quota_comparison(),
             }
 
     def _fetch_status(self, user_id: int) -> Dict[str, Any]:

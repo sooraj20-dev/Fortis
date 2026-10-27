@@ -277,11 +277,11 @@ const UsagePage: React.FC = () => {
         {/* 1. Today's Requests */}
         <MetricCard
           label="Today's Requests"
-          value={status?.today_total ?? '—'}
+          value={status?.today_total != null ? status.today_total : '—'}
           sub={
-            status
-              ? `${status.today_successful} successful · ${status.today_failed} failed`
-              : undefined
+            status && status.today_successful != null
+              ? `${status.today_successful} successful · ${status.today_failed ?? 0} failed`
+              : 'Tracking unavailable'
           }
         />
 
@@ -339,14 +339,14 @@ const UsagePage: React.FC = () => {
 
         {/* 6. Remaining Balance */}
         <MetricCard
-          label="Remaining Balance"
+          label={quota?.is_warning_budget ? 'Warning Budget Left' : 'Remaining Balance'}
           value={
-            quota ? (
+            quota && !quota.tracking_unavailable && quota.daily_requests_remaining != null ? (
               <span
                 className={`tabular-nums ${
-                  quota.daily_requests_percent_used >= 90
+                  (quota.daily_requests_percent_used ?? 0) >= 90
                     ? 'text-danger'
-                    : quota.daily_requests_percent_used >= 70
+                    : (quota.daily_requests_percent_used ?? 0) >= 70
                       ? 'text-warning'
                       : 'text-success'
                 }`}
@@ -359,13 +359,15 @@ const UsagePage: React.FC = () => {
               '—'
             )
           }
-          warn={quota ? quota.daily_requests_percent_used >= 70 : false}
+          warn={quota && !quota.tracking_unavailable ? (quota.daily_requests_percent_used ?? 0) >= 70 : false}
           sub={
-            quota
-              ? `${quota.daily_requests_used} used of ${quota.daily_request_limit} limit (${quota.daily_requests_percent_used}%)`
-              : hasBudget
-                ? `Limit: ${budget!.daily_request_budget}/day`
-                : 'No budget configured'
+            quota && !quota.tracking_unavailable && quota.daily_requests_remaining != null
+              ? `${quota.daily_requests_used ?? 0} used of ${quota.daily_request_limit ?? '—'} (${quota.daily_requests_percent_used ?? 0}%)`
+              : quota?.tracking_unavailable
+                ? 'Usage tracking unavailable'
+                : hasBudget
+                  ? `Limit: ${budget!.daily_request_budget}/day`
+                  : 'No budget configured'
           }
         />
       </div>
@@ -381,173 +383,188 @@ const UsagePage: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-bold text-text-primary">
-                    Gemini Quota & Balance Analysis
+                    {quota.is_warning_budget ? 'Application Warning Budget' : 'Google Gemini Quota Analysis'}
                   </h2>
                   <span className="fortis-pill text-[10px] py-0.5 px-2 bg-brand/10 text-brand-light border-brand/20">
                     {quota.model}
                   </span>
                 </div>
                 <p className="text-xs text-text-muted mt-0.5">
-                  Direct comparison of current actual usage against total limit with remaining balance
+                  {quota.limit_description || 'Direct comparison of current actual usage against total limit with remaining balance'}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3 text-xs flex-wrap">
-              <span className="px-2.5 py-1 rounded-full bg-dark-surface border border-dark-border text-text-secondary flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-brand-light" />
-                Resets in <span className="font-bold text-text-primary">{quota.resets_in}</span> (00:00 UTC)
-              </span>
+              {quota.resets_in && quota.resets_in !== '—' ? (
+                <span className="px-2.5 py-1 rounded-full bg-dark-surface border border-dark-border text-text-secondary flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-brand-light" />
+                  Resets in <span className="font-bold text-text-primary">{quota.resets_in}</span> (00:00 UTC)
+                </span>
+              ) : null}
               <a
                 href="https://ai.google.dev/pricing"
                 target="_blank"
                 rel="noreferrer"
                 className="text-brand-light hover:text-brand transition-colors flex items-center gap-1 font-semibold"
               >
-                Official Limits <ExternalLink className="w-3 h-3" />
+                Official Google Limits <ExternalLink className="w-3 h-3" />
               </a>
             </div>
           </div>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* 1. Daily Requests Comparison */}
-            <div className="p-4 rounded-xl bg-dark-surface/80 border border-dark-border space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="overline">Daily Requests</span>
-                <span
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                    quota.daily_requests_percent_used >= 90
-                      ? 'bg-danger/15 text-danger border border-danger/30'
-                      : quota.daily_requests_percent_used >= 70
-                        ? 'bg-warning/15 text-warning border border-warning/30'
-                        : 'bg-success/15 text-success border border-success/30'
-                  }`}
-                >
-                  {quota.daily_requests_percent_used >= 90
-                    ? 'Critical'
-                    : quota.daily_requests_percent_used >= 70
-                      ? 'Approaching Limit'
-                      : 'Healthy Balance'}
-                </span>
-              </div>
-
-              <div>
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <span className="text-2xl font-black text-text-primary tabular-nums">
-                    {quota.daily_requests_remaining.toLocaleString()}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    balance remaining
-                  </span>
-                </div>
-
-                {/* Progress bar */}
-                <div className="h-2 w-full bg-dark-border rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 ${
-                      quota.daily_requests_percent_used >= 90
-                        ? 'bg-danger'
-                        : quota.daily_requests_percent_used >= 70
-                          ? 'bg-warning'
-                          : 'bg-success'
-                    }`}
-                    style={{ width: `${Math.min(100, quota.daily_requests_percent_used)}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-dark-border/60">
-                <div>
-                  <span className="text-[10px] uppercase text-text-muted block">Current Usage</span>
-                  <span className="font-bold text-text-primary tabular-nums">
-                    {quota.daily_requests_used.toLocaleString()}
-                  </span>
-                  <span className="text-text-muted text-[11px]"> ({quota.daily_requests_percent_used}%)</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase text-text-muted block">Total Actual Limit</span>
-                  <span className="font-bold text-text-secondary tabular-nums">
-                    {quota.daily_request_limit.toLocaleString()} / day
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Token Capacity Comparison */}
-            <div className="p-4 rounded-xl bg-dark-surface/80 border border-dark-border space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="overline">Daily Token Capacity</span>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-brand/10 text-brand-light border border-brand/20">
-                  {fmtTokens(quota.daily_tokens_remaining)} balance
-                </span>
-              </div>
-
-              <div>
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <span className="text-2xl font-black text-text-primary tabular-nums">
-                    {fmtTokens(quota.daily_tokens_remaining)}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    tokens remaining
-                  </span>
-                </div>
-
-                {/* Progress bar */}
-                <div className="h-2 w-full bg-dark-border rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-brand transition-all duration-500"
-                    style={{ width: `${Math.min(100, quota.daily_tokens_percent_used)}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-dark-border/60">
-                <div>
-                  <span className="text-[10px] uppercase text-text-muted block">Used Today</span>
-                  <span className="font-bold text-text-primary tabular-nums">
-                    {fmtTokens(quota.daily_tokens_used)}
-                  </span>
-                  <span className="text-text-muted text-[11px]"> ({quota.daily_tokens_percent_used}%)</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase text-text-muted block">Total Limit</span>
-                  <span className="font-bold text-text-secondary tabular-nums">
-                    {fmtTokens(quota.daily_token_limit)} / day
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Rate Window & Tier Specs */}
-            <div className="p-4 rounded-xl bg-dark-surface/80 border border-dark-border space-y-3 md:col-span-2 lg:col-span-1">
-              <div className="flex items-center justify-between">
-                <span className="overline">Rate Windows</span>
-                <span className="text-[11px] text-text-muted capitalize">
-                  {quota.limit_label}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 py-1">
-                <div className="p-2.5 rounded-lg bg-dark-card border border-dark-border/60">
-                  <span className="text-[10px] uppercase text-text-muted block">Requests / Min</span>
-                  <span className="text-lg font-black text-text-primary tabular-nums">{quota.rpm_limit}</span>
-                  <span className="text-[10px] text-text-muted block">RPM max burst</span>
-                </div>
-                <div className="p-2.5 rounded-lg bg-dark-card border border-dark-border/60">
-                  <span className="text-[10px] uppercase text-text-muted block">Tokens / Min</span>
-                  <span className="text-lg font-black text-text-primary tabular-nums">{fmtTokens(quota.tpm_limit)}</span>
-                  <span className="text-[10px] text-text-muted block">TPM bandwidth</span>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-text-muted leading-tight">
-                {quota.limit_type === 'custom_budget'
-                  ? 'Custom threshold configured via AI_DAILY_REQUEST_BUDGET in backend.'
-                  : 'Official Google Gemini free-tier standard limit. Automatic exponential backoff enabled.'}
+          {quota.tracking_unavailable ? (
+            <div className="p-6 rounded-xl bg-dark-surface/80 border border-dark-border text-center space-y-2">
+              <AlertTriangle className="w-6 h-6 text-warning mx-auto" />
+              <p className="text-sm font-bold text-text-primary">Usage Tracking Unavailable</p>
+              <p className="text-xs text-text-muted max-w-md mx-auto">
+                Unable to retrieve real-time API call metrics and remaining quota from MongoDB.
+                Missing tracking data is not interpreted as available quota.
               </p>
             </div>
-          </div>
+          ) : (
+            /* Cards Grid */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* 1. Daily Requests Comparison */}
+              <div className="p-4 rounded-xl bg-dark-surface/80 border border-dark-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="overline">{quota.is_warning_budget ? 'Daily Warning Budget' : 'Daily Requests'}</span>
+                  <span
+                    className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                      (quota.daily_requests_percent_used ?? 0) >= 90
+                        ? 'bg-danger/15 text-danger border border-danger/30'
+                        : (quota.daily_requests_percent_used ?? 0) >= 70
+                          ? 'bg-warning/15 text-warning border border-warning/30'
+                          : 'bg-success/15 text-success border border-success/30'
+                    }`}
+                  >
+                    {(quota.daily_requests_percent_used ?? 0) >= 90
+                      ? 'Critical'
+                      : (quota.daily_requests_percent_used ?? 0) >= 70
+                        ? 'Approaching Limit'
+                        : 'Healthy Balance'}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <span className="text-2xl font-black text-text-primary tabular-nums">
+                      {quota.daily_requests_remaining != null ? quota.daily_requests_remaining.toLocaleString() : '—'}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      {quota.is_warning_budget ? 'budget remaining' : 'balance remaining'}
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="h-2 w-full bg-dark-border rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        (quota.daily_requests_percent_used ?? 0) >= 90
+                          ? 'bg-danger'
+                          : (quota.daily_requests_percent_used ?? 0) >= 70
+                            ? 'bg-warning'
+                            : 'bg-success'
+                      }`}
+                      style={{ width: `${Math.min(100, quota.daily_requests_percent_used ?? 0)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-dark-border/60">
+                  <div>
+                    <span className="text-[10px] uppercase text-text-muted block">Current Usage</span>
+                    <span className="font-bold text-text-primary tabular-nums">
+                      {quota.daily_requests_used != null ? quota.daily_requests_used.toLocaleString() : '—'}
+                    </span>
+                    <span className="text-text-muted text-[11px]"> ({quota.daily_requests_percent_used ?? 0}%)</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase text-text-muted block">
+                      {quota.is_warning_budget ? 'Warning Limit' : 'Total Limit'}
+                    </span>
+                    <span className="font-bold text-text-secondary tabular-nums">
+                      {quota.daily_request_limit != null ? `${quota.daily_request_limit.toLocaleString()} / day` : '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Token Capacity Comparison */}
+              <div className="p-4 rounded-xl bg-dark-surface/80 border border-dark-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="overline">Daily Token Capacity</span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-brand/10 text-brand-light border border-brand/20">
+                    {fmtTokens(quota.daily_tokens_remaining)} balance
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <span className="text-2xl font-black text-text-primary tabular-nums">
+                      {fmtTokens(quota.daily_tokens_remaining)}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      tokens remaining
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="h-2 w-full bg-dark-border rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-brand transition-all duration-500"
+                      style={{ width: `${Math.min(100, quota.daily_tokens_percent_used ?? 0)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-dark-border/60">
+                  <div>
+                    <span className="text-[10px] uppercase text-text-muted block">Used Today</span>
+                    <span className="font-bold text-text-primary tabular-nums">
+                      {fmtTokens(quota.daily_tokens_used)}
+                    </span>
+                    <span className="text-text-muted text-[11px]"> ({quota.daily_tokens_percent_used ?? 0}%)</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase text-text-muted block">Total Limit</span>
+                    <span className="font-bold text-text-secondary tabular-nums">
+                      {fmtTokens(quota.daily_token_limit)} / day
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Rate Window & Tier Specs */}
+              <div className="p-4 rounded-xl bg-dark-surface/80 border border-dark-border space-y-3 md:col-span-2 lg:col-span-1">
+                <div className="flex items-center justify-between">
+                  <span className="overline">Rate Windows</span>
+                  <span className="text-[11px] text-text-muted capitalize">
+                    {quota.limit_label}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 py-1">
+                  <div className="p-2.5 rounded-lg bg-dark-card border border-dark-border/60">
+                    <span className="text-[10px] uppercase text-text-muted block">Requests / Min</span>
+                    <span className="text-lg font-black text-text-primary tabular-nums">{quota.rpm_limit ?? '—'}</span>
+                    <span className="text-[10px] text-text-muted block">RPM max burst</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-dark-card border border-dark-border/60">
+                    <span className="text-[10px] uppercase text-text-muted block">Tokens / Min</span>
+                    <span className="text-lg font-black text-text-primary tabular-nums">{fmtTokens(quota.tpm_limit)}</span>
+                    <span className="text-[10px] text-text-muted block">TPM bandwidth</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-text-muted leading-tight">
+                  {quota.limit_type === 'custom_budget'
+                    ? 'Application warning threshold configured via AI_DAILY_REQUEST_BUDGET in backend settings.'
+                    : 'Official Google Gemini Free Tier reference capacity (15 RPM / 1M TPM / 1500 RPD).'}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -703,15 +720,17 @@ const UsagePage: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div>
-                    <p className="text-lg font-black text-text-primary tabular-nums">{d.total}</p>
+                    <p className="text-lg font-black text-text-primary tabular-nums">{d.total ?? '—'}</p>
                     <p className="text-[11px] text-text-muted">Total</p>
                   </div>
                   <div>
-                    <p className="text-lg font-black text-success tabular-nums">{d.successful}</p>
+                    <p className="text-lg font-black text-success tabular-nums">{d.successful ?? '—'}</p>
                     <p className="text-[11px] text-text-muted">Success</p>
                   </div>
                   <div>
-                    <p className="text-lg font-black text-danger tabular-nums">{d.failed + d.rate_limited}</p>
+                    <p className="text-lg font-black text-danger tabular-nums">
+                      {d.failed != null || d.rate_limited != null ? (d.failed ?? 0) + (d.rate_limited ?? 0) : '—'}
+                    </p>
                     <p className="text-[11px] text-text-muted">Errors</p>
                   </div>
                 </div>
@@ -873,13 +892,13 @@ const UsagePage: React.FC = () => {
           {/* Most used feature */}
           {(() => {
             const breakdown = summary?.feature_breakdown ?? {};
-            const topFeature = Object.entries(breakdown).sort(([, a], [, b]) => b.total - a.total)[0];
+            const topFeature = Object.entries(breakdown).sort(([, a], [, b]) => (b.total ?? 0) - (a.total ?? 0))[0];
             if (!topFeature) return null;
             return (
               <div className="fortis-card bg-dark-surface p-3 space-y-1">
                 <p className="overline">Most Used Feature</p>
                 <p className="text-base font-black text-text-primary">{featureLabel(topFeature[0])}</p>
-                <p className="text-text-muted">{topFeature[1].total} requests</p>
+                <p className="text-text-muted">{topFeature[1].total ?? 0} requests</p>
               </div>
             );
           })()}

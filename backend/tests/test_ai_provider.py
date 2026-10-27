@@ -79,7 +79,7 @@ async def test_coach_provider_ends_with_user_and_caps_output_tokens(monkeypatch)
     )
     call = models.calls[0]
     assert call["contents"][-1]["role"] == "user"
-    assert call["config"]["max_output_tokens"] == 256
+    assert call["config"]["max_output_tokens"] == 192  # GeminiProvider caps Coach output at 192 tokens
 
 
 @pytest.mark.asyncio

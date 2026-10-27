@@ -281,12 +281,10 @@ async def test_get_status_response():
         assert status["feature_today"]["ai_coach"]["total"] == 5
         assert "quota_comparison" in status
         qc = status["quota_comparison"]
-        assert qc["daily_request_limit"] == 1500
         assert qc["daily_requests_used"] == 5
-        assert qc["daily_requests_remaining"] == 1495
-        assert qc["daily_requests_percent_used"] == 0.3
-        assert qc["daily_token_limit"] == 1_000_000
         assert qc["daily_tokens_used"] == 2100
-        assert qc["daily_tokens_remaining"] == 997900
-        assert qc["rpm_limit"] == 15
-        assert "resets_in" in qc
+        assert qc["official_quota_available"] is False
+        assert qc["official_quota_label"] == "Official Gemini quota unavailable"
+        assert qc["official_daily_request_limit"] is None
+        assert qc["resets_at"] is None
+        assert qc["resets_in"] is None

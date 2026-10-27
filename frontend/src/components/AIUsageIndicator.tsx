@@ -157,7 +157,7 @@ export const AIUsageIndicator: React.FC<AIUsageIndicatorProps> = ({ feature }) =
               {/* Feature-specific today */}
               <div>
                 <p className="overline mb-1">{featureLabel} Today</p>
-                {featureData ? (
+                {featureData && featureData.total != null ? (
                   <>
                     <p className="text-xs text-text-secondary">
                       {featureData.total} request{featureData.total !== 1 ? 's' : ''}
@@ -175,7 +175,7 @@ export const AIUsageIndicator: React.FC<AIUsageIndicatorProps> = ({ feature }) =
               <div>
                 <p className="overline mb-1">App-wide Today</p>
                 <p className="text-xs text-text-secondary">
-                  {status?.today_total ?? 0} total
+                  {status?.today_total != null ? `${status.today_total} total` : '—'}
                   {(status?.today_rate_limited ?? 0) > 0 && (
                     <> · <span className="text-warning">{status!.today_rate_limited} rate limited</span></>
                   )}
@@ -189,10 +189,10 @@ export const AIUsageIndicator: React.FC<AIUsageIndicatorProps> = ({ feature }) =
               </div>
 
               {/* Limit & Balance comparison */}
-              {status?.quota_comparison && (
+              {status?.quota_comparison && !status.quota_comparison.tracking_unavailable && status.quota_comparison.daily_requests_remaining != null && (
                 <div className="p-2.5 rounded-xl bg-dark-surface/90 border border-dark-border space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="overline">Daily Balance</span>
+                    <span className="overline">{status.quota_comparison.is_warning_budget ? 'Warning Budget' : 'Daily Balance'}</span>
                     <span className="font-bold text-success tabular-nums">
                       {status.quota_comparison.daily_requests_remaining.toLocaleString()} left
                     </span>
@@ -200,18 +200,18 @@ export const AIUsageIndicator: React.FC<AIUsageIndicatorProps> = ({ feature }) =
                   <div className="h-1.5 w-full bg-dark-border rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-300 ${
-                        status.quota_comparison.daily_requests_percent_used >= 90
+                        (status.quota_comparison.daily_requests_percent_used ?? 0) >= 90
                           ? 'bg-danger'
-                          : status.quota_comparison.daily_requests_percent_used >= 70
+                          : (status.quota_comparison.daily_requests_percent_used ?? 0) >= 70
                             ? 'bg-warning'
                             : 'bg-success'
                       }`}
-                      style={{ width: `${Math.min(100, status.quota_comparison.daily_requests_percent_used)}%` }}
+                      style={{ width: `${Math.min(100, status.quota_comparison.daily_requests_percent_used ?? 0)}%` }}
                     />
                   </div>
                   <div className="flex justify-between text-[10px] text-text-muted">
-                    <span>Used: {status.quota_comparison.daily_requests_used}</span>
-                    <span>Limit: {status.quota_comparison.daily_request_limit}</span>
+                    <span>Used: {status.quota_comparison.daily_requests_used ?? '—'}</span>
+                    <span>Limit: {status.quota_comparison.daily_request_limit ?? '—'}</span>
                   </div>
                 </div>
               )}

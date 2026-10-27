@@ -3,10 +3,10 @@ import api from './api';
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
 export interface FeatureUsage {
-  total: number;
-  successful: number;
-  failed: number;
-  rate_limited: number;
+  total: number | null;
+  successful: number | null;
+  failed: number | null;
+  rate_limited: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
 }
@@ -23,27 +23,35 @@ export interface DailyStat {
 
 export interface QuotaComparison {
   model: string;
-  daily_request_limit: number;
-  daily_requests_used: number;
-  daily_requests_remaining: number;
-  daily_requests_percent_used: number;
-  daily_token_limit: number;
-  daily_tokens_used: number;
-  daily_tokens_remaining: number;
-  daily_tokens_percent_used: number;
-  rpm_limit: number;
-  tpm_limit: number;
-  limit_type: 'custom_budget' | 'gemini_standard_tier';
+  daily_request_limit: number | null;
+  daily_requests_used: number | null;
+  daily_requests_remaining: number | null;
+  daily_requests_percent_used: number | null;
+  daily_token_limit: number | null;
+  daily_tokens_used: number | null;
+  daily_tokens_remaining: number | null;
+  daily_tokens_percent_used: number | null;
+  rpm_limit: number | null;
+  tpm_limit: number | null;
+  limit_type: 'custom_budget' | 'gemini_standard_tier' | 'tracking_unavailable' | 'official_quota_unavailable' | string;
   limit_label: string;
-  resets_at: string;
-  resets_in: string;
+  limit_description?: string;
+  is_warning_budget?: boolean;
+  configured_warning_budget?: number | null;
+  official_daily_request_limit?: number | null;
+  official_quota_available?: boolean;
+  official_quota_label?: string;
+  official_quota_url?: string;
+  resets_at?: string | null;
+  resets_in?: string | null;
+  tracking_unavailable?: boolean;
 }
 
 export interface UsageStatus {
-  today_total: number;
-  today_successful: number;
-  today_failed: number;
-  today_rate_limited: number;
+  today_total: number | null;
+  today_successful: number | null;
+  today_failed: number | null;
+  today_rate_limited: number | null;
   feature_today: {
     ai_coach: FeatureUsage;
     fortis_vision: FeatureUsage;
@@ -67,10 +75,10 @@ export interface UsageStatus {
 export interface UsageSummary {
   period_start: string;
   period_end: string;
-  total_attempts: number;
-  successful: number;
-  failed: number;
-  rate_limited: number;
+  total_attempts: number | null;
+  successful: number | null;
+  failed: number | null;
+  rate_limited: number | null;
   input_tokens_total: number | null;
   output_tokens_total: number | null;
   total_tokens: number | null;

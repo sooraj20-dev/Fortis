@@ -161,11 +161,9 @@ async def analyze_images_json(
     response = None
     final_model = candidate_models[0]
 
-    # Record the start time before the first outbound attempt
-    started_at = datetime.utcnow()
-
     for model_name in candidate_models:
         for attempt in range(2):
+            attempt_started_at = datetime.utcnow()
             try:
                 config_kwargs: Dict[str, Any] = {
                     "response_mime_type": "application/json",
@@ -184,12 +182,30 @@ async def analyze_images_json(
                     config=types.GenerateContentConfig(**config_kwargs),
                 )
                 final_model = model_name
+                _fire_vision_record(
+                    user_id=user_id,
+                    feature=feature,
+                    model=model_name,
+                    started_at=attempt_started_at,
+                    status="success",
+                    usage_metadata=getattr(response, "usage_metadata", None),
+                )
                 break
             except Exception as exc:
                 status = getattr(exc, "code", None)
                 logger.warning("Gemini vision attempt %d with model %s failed: type=%s status=%s", attempt + 1, model_name, type(exc).__name__, status)
-                if last_error is None or status is not None:
-                    last_error = exc
+                last_error = exc
+                final_model = model_name
+                # Record each actual outbound attempt exactly once
+                _fire_vision_record(
+                    user_id=user_id,
+                    feature=feature,
+                    model=model_name,
+                    started_at=attempt_started_at,
+                    status="rate_limited" if status == 429 else "failed",
+                    exc=exc,
+                    http_status_code=status,
+                )
                 if status in (400, 401, 403):
                     break
                 if status in (503, 404):
@@ -234,16 +250,6 @@ async def analyze_images_json(
         else:
             detail = "Gemini vision request failed. Check backend network and Gemini API configuration."
 
-        # Fire-and-forget usage tracking for failure
-        _fire_vision_record(
-            user_id=user_id,
-            feature=feature,
-            model=final_model,
-            started_at=started_at,
-            status="rate_limited" if status == 429 else "failed",
-            exc=last_error,
-            http_status_code=status,
-        )
         raise AIProviderError(detail) from last_error
 
     text = response.text or ""
@@ -290,15 +296,6 @@ async def analyze_images_json(
             logger.warning("Gemini vision response failed schema validation: schema=%s", response_schema.__name__)
             raise AIProviderError("Gemini returned analysis that did not match the required food schema. Please retry.") from exc
 
-    # Fire-and-forget usage tracking for success
-    _fire_vision_record(
-        user_id=user_id,
-        feature=feature,
-        model=final_model,
-        started_at=started_at,
-        status="success",
-        usage_metadata=getattr(response, "usage_metadata", None),
-    )
     return result
 
 

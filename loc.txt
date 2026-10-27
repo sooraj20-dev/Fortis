@@ -1,0 +1,14 @@
+auth=5
+coach=4
+dashboard=1
+fitness_state=6
+nutrition=7
+profile=4
+progress=3
+recovery=4
+scan=8
+store=30
+usage=3
+vision=3
+workouts=8
+__init__=0

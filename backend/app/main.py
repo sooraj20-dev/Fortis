@@ -4,13 +4,14 @@ Production-quality adaptive fitness intelligence platform.
 """
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 import logging
 
-from app.database import engine, Base, SessionLocal
+from app.database import engine, Base, SessionLocal, DatabaseUnavailableError
 from app.config import settings
 
 # Import all models to ensure they're registered with Base
@@ -124,6 +125,15 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(DatabaseUnavailableError)
+async def database_unavailable_exception_handler(request: Request, exc: DatabaseUnavailableError):
+    logger.error("Database unavailable handling request to %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "We couldn't load your data right now. Please try again."},
+    )
 
 # CORS
 app.add_middleware(

@@ -185,11 +185,11 @@ def get_latest_scan(current_user: User = Depends(get_current_user), db: Session 
         FitnessState.user_id == current_user.id
     ).order_by(desc(FitnessState.date)).first()
 
-    posture_val = 70.0
+    posture_val = None
     if m.functional_metrics and isinstance(m.functional_metrics, dict) and "posture_score" in m.functional_metrics:
         posture_val = m.functional_metrics["posture_score"]
     elif m.joint_angles and isinstance(m.joint_angles, dict):
-        posture_val = m.joint_angles.get("posture", {}).get("posture_score", 70.0)
+        posture_val = m.joint_angles.get("posture", {}).get("posture_score", None)
 
     return {
         "has_scan": True,
@@ -200,6 +200,7 @@ def get_latest_scan(current_user: User = Depends(get_current_user), db: Session 
         "model_version": scan.model_version,
         "confidence": scan.confidence,
         "scan_confidence": scan.confidence,
+        "data_available": True,
         "movement_quality": m.movement_quality,
         "mobility": m.mobility,
         "mobility_score": m.mobility,
@@ -232,7 +233,7 @@ def get_latest_scan(current_user: User = Depends(get_current_user), db: Session 
             {"metric_name": "consistency", "value": m.movement_consistency, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "TEMPO"},
             {"metric_name": "symmetry", "value": m.symmetry_indicator, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "POSTURE"},
         ],
-        "fortis_pulse_updated": state.fortis_pulse if state else 74.0,
+        "fortis_pulse_updated": state.fortis_pulse if state else None,
         "decision_updated": True,
         "limitations": scan.limitations or MODEL_LIMITATIONS,
         "disclaimer": RESPONSIBLE_AI_DISCLAIMER,
@@ -298,11 +299,11 @@ def get_scan_detail(
 
     m = scan.metrics
     obs = db.query(ScanObservation).filter(ScanObservation.scan_id == scan.id).all()
-    posture_val = 70.0
+    posture_val = None
     if m and m.functional_metrics and isinstance(m.functional_metrics, dict) and "posture_score" in m.functional_metrics:
         posture_val = m.functional_metrics["posture_score"]
     elif m and m.joint_angles and isinstance(m.joint_angles, dict):
-        posture_val = m.joint_angles.get("posture", {}).get("posture_score", 70.0)
+        posture_val = m.joint_angles.get("posture", {}).get("posture_score", None)
 
     # Get today's decision & fitness state
     decision = db.query(FortisDecision).filter(
@@ -322,16 +323,17 @@ def get_scan_detail(
         "model_version": scan.model_version,
         "confidence": scan.confidence,
         "scan_confidence": scan.confidence,
-        "movement_quality": m.movement_quality if m else 0.0,
-        "mobility": m.mobility if m else 0.0,
-        "mobility_score": m.mobility if m else 0.0,
-        "stability": m.stability if m else 0.0,
-        "stability_score": m.stability if m else 0.0,
-        "movement_consistency": m.movement_consistency if m else 0.0,
-        "symmetry_indicator": m.symmetry_indicator if m else 0.0,
-        "squat_movement_score": m.squat_movement_score if m else 0.0,
-        "squat_score": m.squat_movement_score if m else 0.0,
-        "posture_score": posture_val,
+        "data_available": m is not None,
+        "movement_quality": m.movement_quality if m else None,
+        "mobility": m.mobility if m else None,
+        "mobility_score": m.mobility if m else None,
+        "stability": m.stability if m else None,
+        "stability_score": m.stability if m else None,
+        "movement_consistency": m.movement_consistency if m else None,
+        "symmetry_indicator": m.symmetry_indicator if m else None,
+        "squat_movement_score": m.squat_movement_score if m else None,
+        "squat_score": m.squat_movement_score if m else None,
+        "posture_score": posture_val if m else None,
         "primary_movement_pattern": "squat_kinetic_chain",
         "joint_angles": m.joint_angles if m else {},
         "functional_metrics": m.functional_metrics if m else {},
@@ -348,13 +350,13 @@ def get_scan_detail(
             for o in obs
         ],
         "metrics": [
-            {"metric_name": "movement_quality", "value": m.movement_quality if m else 0.0, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "KINETICS"},
-            {"metric_name": "mobility", "value": m.mobility if m else 0.0, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "ROM"},
-            {"metric_name": "stability", "value": m.stability if m else 0.0, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "CONTROL"},
-            {"metric_name": "consistency", "value": m.movement_consistency if m else 0.0, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "TEMPO"},
-            {"metric_name": "symmetry", "value": m.symmetry_indicator if m else 0.0, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "POSTURE"},
+            {"metric_name": "movement_quality", "value": m.movement_quality if m else None, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "KINETICS"},
+            {"metric_name": "mobility", "value": m.mobility if m else None, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "ROM"},
+            {"metric_name": "stability", "value": m.stability if m else None, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "CONTROL"},
+            {"metric_name": "consistency", "value": m.movement_consistency if m else None, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "TEMPO"},
+            {"metric_name": "symmetry", "value": m.symmetry_indicator if m else None, "unit": "%", "confidence": round(scan.confidence / 100.0, 2), "category": "POSTURE"},
         ],
-        "fortis_pulse_updated": state.fortis_pulse if state else 74.0,
+        "fortis_pulse_updated": state.fortis_pulse if state else None,
         "decision_updated": True,
         "limitations": scan.limitations or MODEL_LIMITATIONS,
         "disclaimer": RESPONSIBLE_AI_DISCLAIMER,
@@ -565,13 +567,24 @@ def generate_fortis_blueprint(
     schedule = db.query(Schedule).filter(Schedule.user_id == current_user.id).first()
 
     primary_goal = goal.primary_goal if goal else "GENERAL_FITNESS"
-    mq = scan.metrics.movement_quality if (scan and scan.metrics) else (state.movement_quality or 75.0)
-    mobility = scan.metrics.mobility if (scan and scan.metrics) else (state.mobility_score or 65.0)
-    stability = scan.metrics.stability if (scan and scan.metrics) else (getattr(state, "stability", None) or 70.0)
+    mq = scan.metrics.movement_quality if (scan and scan.metrics and scan.metrics.movement_quality is not None) else (state.movement_quality if state else None)
+    mobility = scan.metrics.mobility if (scan and scan.metrics and scan.metrics.mobility is not None) else (state.mobility_score if state else None)
+    stability = scan.metrics.stability if (scan and scan.metrics and scan.metrics.stability is not None) else (getattr(state, "stability", None) if state else None)
+    recovery_score = round(state.recovery_score, 1) if (state and state.recovery_score is not None) else None
+    fortis_pulse = round(state.fortis_pulse, 1) if (state and state.fortis_pulse is not None) else None
 
     # 4. Determine Training Focus priorities dynamically based on scan
     focus_items = []
-    if mq >= 75:
+    if mq is None:
+        focus_items.append({
+            "area": "Movement Assessment Pending",
+            "name": "Movement Assessment Pending",
+            "priority": "medium",
+            "level": "Pending",
+            "reason": "Complete a Fortis Scan to calibrate personalized movement quality and load capacity.",
+            "desc": "Complete a Fortis Scan to calibrate personalized movement quality and load capacity."
+        })
+    elif mq >= 75:
         focus_items.append({
             "area": "Strength Progression",
             "name": "Strength Progression",
@@ -590,7 +603,16 @@ def generate_fortis_blueprint(
             "desc": "Load cautiously while reinforcing kinetic path."
         })
 
-    if mobility < 70:
+    if mobility is None:
+        focus_items.append({
+            "area": "Mobility Assessment Pending",
+            "name": "Mobility Assessment Pending",
+            "priority": "low",
+            "level": "Pending",
+            "reason": "Baseline range of motion will calibrate from your first movement scan.",
+            "desc": "Baseline range of motion will calibrate from your first movement scan."
+        })
+    elif mobility < 70:
         focus_items.append({
             "area": "Mobility & Range",
             "name": "Mobility & Range",
@@ -609,7 +631,16 @@ def generate_fortis_blueprint(
             "desc": "Maintain full joint range of motion."
         })
 
-    if stability < 72:
+    if stability is None:
+        focus_items.append({
+            "area": "Stability Assessment Pending",
+            "name": "Stability Assessment Pending",
+            "priority": "low",
+            "level": "Pending",
+            "reason": "Torso sway and balance metrics will calibrate from your movement scan.",
+            "desc": "Torso sway and balance metrics will calibrate from your movement scan."
+        })
+    elif stability < 72:
         focus_items.append({
             "area": "Movement Control",
             "name": "Movement Control",
@@ -635,7 +666,7 @@ def generate_fortis_blueprint(
             "day": "Mon",
             "focus": "Strength Compound",
             "exercises": ["Goblet Squat (3s tempo)", "Dumbbell Bench Press", "Romanian Deadlift", "Plank"],
-            "emphasis": "Controlled descent" if stability < 72 else "Progressive load",
+            "emphasis": "Controlled descent" if (stability is not None and stability < 72) else "Progressive load",
         },
         {
             "day": "Tue",
@@ -711,11 +742,12 @@ def generate_fortis_blueprint(
         "blueprint_title": "YOUR FORTIS BLUEPRINT",
         "generated_at": datetime.utcnow().isoformat(),
         "current_state": {
-            "movement_quality": round(mq, 1),
-            "mobility": round(mobility, 1),
-            "stability": round(stability, 1),
-            "recovery_score": round(state.recovery_score or 68.0, 1),
-            "fortis_pulse": round(state.fortis_pulse or 74.0, 1),
+            "movement_quality": round(mq, 1) if mq is not None else None,
+            "mobility": round(mobility, 1) if mobility is not None else None,
+            "stability": round(stability, 1) if stability is not None else None,
+            "recovery_score": recovery_score,
+            "fortis_pulse": fortis_pulse,
+            "data_available": any(v is not None for v in (mq, mobility, stability, recovery_score, fortis_pulse)),
         },
         "training_focus": focus_items,
         "weekly_plan": weekly_plan,

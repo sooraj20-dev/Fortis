@@ -29,6 +29,16 @@ _mongo_client: Optional[pymongo.MongoClient] = None
 _mongo_db = None
 
 
+class DatabaseUnavailableError(RuntimeError):
+    """
+    Raised when a MongoDB query fails due to a connection or server error,
+    so callers can distinguish a database failure from a legitimate empty result.
+
+    Per engineering rule 2: database failures must never silently become
+    legitimate empty results or zero counts.
+    """
+
+
 def get_mongo_client() -> pymongo.MongoClient:
     global _mongo_client
     if _mongo_client is None:
@@ -81,13 +91,11 @@ def _get_next_id(db, collection_name: str) -> int:
                 return target_seq
         return res["seq"] if res and "seq" in res else 1
     except Exception as e:
-        logger.warning(f"Error fetching next sequence from Atlas: {e}. Falling back safely.")
-        try:
-            highest = db[collection_name].find_one(sort=[("id", -1)])
-            return (highest["id"] + 1) if highest and "id" in highest else 1
-        except Exception:
-            import time
-            return int(time.time() * 1000) % 100000000
+        logger.error(f"Error fetching next sequence from Atlas for '{collection_name}': {e}")
+        # Never fabricate timestamp-derived IDs on database failure (Engineering Rule 2).
+        raise DatabaseUnavailableError(
+            f"Failed to generate sequence ID for '{collection_name}': {type(e).__name__}"
+        ) from e
 
 
 def _clean_val(val: Any) -> Any:
@@ -366,7 +374,9 @@ class MongoQuery:
             return None
         except Exception as e:
             logger.error(f"MongoDB find_one error on {self.collection_name}: {e}")
-            return None
+            raise DatabaseUnavailableError(
+                f"find_one failed on '{self.collection_name}': {type(e).__name__}"
+            ) from e
 
     def all(self) -> List[Any]:
         db = self.session.get_db()
@@ -389,7 +399,9 @@ class MongoQuery:
             return instances
         except Exception as e:
             logger.error(f"MongoDB find error on {self.collection_name}: {e}")
-            return []
+            raise DatabaseUnavailableError(
+                f"find failed on '{self.collection_name}': {type(e).__name__}"
+            ) from e
 
     def count(self) -> int:
         db = self.session.get_db()
@@ -399,7 +411,11 @@ class MongoQuery:
             return collection.count_documents(q_filter)
         except Exception as e:
             logger.error(f"MongoDB count error on {self.collection_name}: {e}")
-            return 0
+            # Re-raise as DatabaseUnavailableError so callers can distinguish a real DB
+            # failure from a legitimate count of zero (Engineering Rule 2).
+            raise DatabaseUnavailableError(
+                f"count_documents failed on '{self.collection_name}': {type(e).__name__}"
+            ) from e
 
 
 class MongoSession:
@@ -442,39 +458,45 @@ class MongoSession:
 
     def flush(self) -> None:
         """Assign IDs and persist pending operations and dirty tracked instances immediately."""
-        # 1. Persist updates ONLY to tracked instances that actually changed
-        for inst in list(self._tracked_instances.values()):
-            if inst not in self._pending_delete and getattr(inst, "id", None) is not None:
-                curr_doc = _model_to_dict(inst)
-                init_doc = self._initial_snapshots.get(id(inst))
-                if init_doc is None or curr_doc != init_doc:
-                    col_name = _get_collection_name(inst)
-                    col = self._db[col_name]
-                    col.replace_one({"id": inst.id}, curr_doc, upsert=True)
-                    self._initial_snapshots[id(inst)] = curr_doc
+        try:
+            # 1. Persist updates ONLY to tracked instances that actually changed
+            for inst in list(self._tracked_instances.values()):
+                if inst not in self._pending_delete and getattr(inst, "id", None) is not None:
+                    curr_doc = _model_to_dict(inst)
+                    init_doc = self._initial_snapshots.get(id(inst))
+                    if init_doc is None or curr_doc != init_doc:
+                        col_name = _get_collection_name(inst)
+                        col = self._db[col_name]
+                        col.replace_one({"id": inst.id}, curr_doc, upsert=True)
+                        self._initial_snapshots[id(inst)] = curr_doc
 
-        # 2. Add new instances
-        pending_to_add = list(self._pending_add)
-        self._pending_add.clear()
-        for inst in pending_to_add:
-            col_name = _get_collection_name(inst)
-            col = self._db[col_name]
-            if getattr(inst, "id", None) is None:
-                inst.id = _get_next_id(self._db, col_name)
-            doc = _model_to_dict(inst)
-            col.replace_one({"id": inst.id}, doc, upsert=True)
-            self.track(inst)
+            # 2. Add new instances
+            pending_to_add = list(self._pending_add)
+            self._pending_add.clear()
+            for inst in pending_to_add:
+                col_name = _get_collection_name(inst)
+                col = self._db[col_name]
+                if getattr(inst, "id", None) is None:
+                    inst.id = _get_next_id(self._db, col_name)
+                doc = _model_to_dict(inst)
+                col.replace_one({"id": inst.id}, doc, upsert=True)
+                self.track(inst)
 
-        # 3. Delete requested instances
-        pending_to_delete = list(self._pending_delete)
-        self._pending_delete.clear()
-        for inst in pending_to_delete:
-            col_name = _get_collection_name(inst)
-            col = self._db[col_name]
-            if getattr(inst, "id", None) is not None:
-                col.delete_one({"id": inst.id})
-                self._tracked_instances.pop(id(inst), None)
-                self._initial_snapshots.pop(id(inst), None)
+            # 3. Delete requested instances
+            pending_to_delete = list(self._pending_delete)
+            self._pending_delete.clear()
+            for inst in pending_to_delete:
+                col_name = _get_collection_name(inst)
+                col = self._db[col_name]
+                if getattr(inst, "id", None) is not None:
+                    col.delete_one({"id": inst.id})
+                    self._tracked_instances.pop(id(inst), None)
+                    self._initial_snapshots.pop(id(inst), None)
+        except DatabaseUnavailableError:
+            raise
+        except Exception as e:
+            logger.error(f"MongoDB flush error: {e}")
+            raise DatabaseUnavailableError(f"flush failed: {type(e).__name__}") from e
 
     def commit(self) -> None:
         self.flush()
@@ -485,13 +507,17 @@ class MongoSession:
 
     def refresh(self, instance: Any) -> None:
         if getattr(instance, "id", None) is not None:
-            col_name = _get_collection_name(instance)
-            doc = self._db[col_name].find_one({"id": instance.id})
-            if doc:
-                for k, v in doc.items():
-                    if k != "_id":
-                        setattr(instance, k, v)
-                self.track(instance)
+            try:
+                col_name = _get_collection_name(instance)
+                doc = self._db[col_name].find_one({"id": instance.id})
+                if doc:
+                    for k, v in doc.items():
+                        if k != "_id":
+                            setattr(instance, k, v)
+                    self.track(instance)
+            except Exception as e:
+                logger.error(f"MongoDB refresh error: {e}")
+                raise DatabaseUnavailableError(f"refresh failed: {type(e).__name__}") from e
 
     def close(self) -> None:
         self._pending_add.clear()

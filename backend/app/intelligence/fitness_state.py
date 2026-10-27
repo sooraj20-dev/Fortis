@@ -21,6 +21,7 @@ from app.ml.interfaces import BaseFatigueModel, FatigueFeatures
 from app.ml.registry import get_fatigue_model
 from app.ml.model_config import ml_config
 from app.intelligence.baseline import BaselineTracker
+from app.database import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -51,16 +52,19 @@ class FitnessStateCalculator:
         window_30d = today - timedelta(days=30)
 
         # --- CONSISTENCY SCORE (30-day workout adherence) ---
-        completed_30d = db.query(Workout).filter(
-            Workout.user_id == user_id,
-            Workout.status == "COMPLETED",
-            func.date(Workout.date) >= window_30d
-        ).count()
+        try:
+            completed_30d = db.query(Workout).filter(
+                Workout.user_id == user_id,
+                Workout.status == "COMPLETED",
+                func.date(Workout.date) >= window_30d
+            ).count()
 
-        planned_30d = db.query(Workout).filter(
-            Workout.user_id == user_id,
-            func.date(Workout.date) >= window_30d
-        ).count()
+            planned_30d = db.query(Workout).filter(
+                Workout.user_id == user_id,
+                func.date(Workout.date) >= window_30d
+            ).count()
+        except DatabaseUnavailableError:
+            raise  # Database is down — do not compute a state from partial data
 
         consistency_score = clamp((completed_30d / max(planned_30d, 1)) * 100)
 
